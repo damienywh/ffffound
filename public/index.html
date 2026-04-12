@@ -1,27 +1,33 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>ffffound v2</title>
-<link rel="stylesheet" href="styles.css"/>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ffffound</title>
+<link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<div id="app">
-  <div id="topbar">
-    <div class="logo">ffffound</div>
-    <div class="controls">
-      <button id="modeBtn">focus</button>
-      <button id="resetBtn">reset taste</button>
-    </div>
-  </div>
-
-  <div id="grid"></div>
-
-  <div id="focus" class="hidden">
-    <img id="focusImg"/>
+<div id="topbar">
+  <div class="left">ffffound restoration project</div>
+  <div class="right">
+    <button id="folderBtn">▣</button>
+    <button id="themeToggle">◐</button>
   </div>
 </div>
+
+<div id="grid"></div>
+
+<div id="viewer" class="hidden">
+  <img id="viewerImg">
+  <div id="controls">
+    <button id="like">♥</button>
+    <button id="dislike">×</button>
+    <button id="save">⊞</button>
+    <a id="download" target="_blank">↓</a>
+  </div>
+</div>
+
+<div id="folders" class="hidden"></div>
 
 <script src="app.js"></script>
 </body>
