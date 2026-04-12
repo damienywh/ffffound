@@ -1,0 +1,6 @@
+name = "private-ffffound-proxy"
+main = "worker.js"
+compatibility_date = "2026-04-12"
+
+[vars]
+# Optional. Set with: wrangler secret put ARENA_TOKEN
