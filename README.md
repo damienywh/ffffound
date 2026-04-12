@@ -1,58 +1,69 @@
-# Private FFFFOUND
+# ffffound
 
-A minimal static site that sits above the Are.na FFFFOUND archive and learns your preferences from upvotes, downvotes, hides, opens, and seed words.
+A minimal, private, taste-learning image browser over the Are.na FFFFOUND archive.
 
-This version adds optional user accounts through Firebase Authentication and stores synced preferences in Cloud Firestore, so your taste profile can follow you across browsers.
-
-## What's included
-
-- `public/index.html` — the app shell
-- `public/styles.css` — the minimal Kinfolk-ish layout
-- `public/app.js` — local ranking, pagination, voting, import/export, Firebase auth, and sync
-- `public/firebase-config.js` — local placeholder config file for browser-only mode
-- `public/firebase-config.example.js` — copy this when you are ready to enable sign-in
-- `cloudflare-worker/worker.js` — optional proxy for Are.na requests
-- `cloudflare-worker/wrangler.toml` — Cloudflare Worker config starter
-- `firestore.rules` — recommended Firestore security rules
+Infinite scroll. No titles. No clutter. Just images that learn what you like.
 
 ## How it works
 
-### Local-only mode
+- **Masonry feed** pulls pages from the `ffffound-archive` channel on Are.na
+- **Infinite scroll** loads and ranks images continuously
+- **Click any image** to open the fullscreen viewer
+- **Like / Dislike** teaches the algorithm your taste — liked content floats up, disliked content disappears
+- **Save to collections** to organize images into personal folders
+- **Dark mode** toggle in the top bar
 
-If you do nothing, the app stores your profile in `localStorage`.
+### Ranking algorithm
 
-Signals used for ranking:
-- words extracted from titles and descriptions
-- domains you consistently upvote or downvote
-- simple aspect/orientation bias (portrait / landscape / square)
-- recency and exploration bonus for unseen items
-- optional seed words you type manually
+The feed learns from your votes using:
 
-### Signed-in mode
+- **Token similarity** — words from titles/descriptions of liked images boost similar content
+- **Domain affinity** — if you consistently like images from certain sources, more appear
+- **Aspect preference** — portrait/landscape/square bias learned from your votes
+- **Recency weighting** — recent votes matter more than old ones
+- **Domain diversity** — prevents the feed from clustering around one source
+- **Serendipity noise** — random factor to keep discovery alive
 
-If you add Firebase config and sign in:
-- Google sign-in works out of the box once enabled in Firebase
-- Facebook sign-in can also be enabled if you supply provider credentials in Firebase and set `providers.facebook` to `true`
-- settings are stored in `users/{uid}/private/profile`
-- interactions are stored in `users/{uid}/interactions/{itemId}`
-- local data and remote data are merged by most recent interaction timestamp
+Downvotes strongly suppress content. The feed re-ranks on every scroll cycle.
 
-## Enable user accounts
+### Keyboard shortcuts (in viewer)
 
-### 1) Create a Firebase project
+| Key | Action |
+|-----|--------|
+| `f` | Like |
+| `x` | Dislike |
+| `s` | Save to collection |
+| `o` | Open original |
+| `←` / `k` | Previous |
+| `→` / `j` | Next |
+| `Esc` | Close |
 
-In Firebase:
-1. Create a project.
-2. Add a **Web app**.
-3. Copy the Firebase config object.
-4. Enable **Authentication**.
-5. Enable **Cloud Firestore**.
+### Collections
 
-### 2) Add your config file
+- Create named collections from the save modal
+- Browse collections from the ⊞ panel
+- Toggle images in/out of collections
+- "All liked" virtual collection auto-generated
 
-Replace `public/firebase-config.js` with your real values, or copy `public/firebase-config.example.js` over it.
+### Persistence
 
-Example:
+Everything is stored in `localStorage` by default. Use **export** to back up your profile (interactions + folders) and **import** to restore it.
+
+## Optional: Firebase cloud sync
+
+Enable sign-in to sync your taste profile across browsers and devices.
+
+### 1. Create a Firebase project
+
+1. Create a project in [Firebase Console](https://console.firebase.google.com)
+2. Add a Web app
+3. Copy the config object
+4. Enable Authentication (Google provider)
+5. Enable Cloud Firestore
+
+### 2. Add your config
+
+Edit `public/firebase-config.js`:
 
 ```js
 window.FFFFOUND_FIREBASE = {
@@ -62,7 +73,7 @@ window.FFFFOUND_FIREBASE = {
     authDomain: 'YOUR_PROJECT.firebaseapp.com',
     projectId: 'YOUR_PROJECT_ID',
     storageBucket: 'YOUR_PROJECT.firebasestorage.app',
-    messagingSenderId: 'YOUR_MESSAGING_SENDER_ID',
+    messagingSenderId: 'YOUR_SENDER_ID',
     appId: 'YOUR_APP_ID'
   },
   providers: {
@@ -72,34 +83,9 @@ window.FFFFOUND_FIREBASE = {
 };
 ```
 
-### 3) Enable sign-in providers
+### 3. Apply Firestore rules
 
-#### Google
-Enable Google in Firebase Authentication.
-
-#### Facebook
-If you want Facebook as well:
-1. Create a Facebook app.
-2. Turn on Facebook Login.
-3. Paste the Facebook App ID and App Secret into Firebase Authentication.
-4. Set `providers.facebook` to `true` in `firebase-config.js`.
-
-### 4) Add your deployed domain to Firebase Auth
-
-Important when deploying to GitHub Pages, Cloudflare Pages, or a custom domain:
-- add your site domain to Firebase Authentication **authorized domains**
-- if you use a custom auth domain, make sure your `authDomain` in the Firebase config matches it
-
-Examples:
-- `yourname.github.io`
-- `ffffound.yourdomain.com`
-- `your-project.pages.dev`
-
-### 5) Apply Firestore security rules
-
-Use `firestore.rules`:
-
-```txt
+```
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -110,49 +96,40 @@ service cloud.firestore {
 }
 ```
 
-This keeps every user's synced taste profile private to that user's UID.
+### 4. Add your domain to Firebase Auth
 
-## Deploy the front end
+Add your deployed domain to Firebase Authentication → Authorized domains.
 
-### GitHub Pages
-1. Put the contents of `public/` into your repo root or docs folder.
-2. Enable GitHub Pages for that branch or folder.
-3. Make sure the deployed domain is listed in Firebase Authentication authorized domains.
-4. Open the site.
-5. If direct Are.na requests fail in your browser, deploy the Cloudflare Worker and switch the app to `Cloudflare proxy` mode.
+## Optional: Are.na proxy
 
-### Cloudflare Pages
-1. Upload the `public/` folder as your static site.
-2. Deploy.
-3. Make sure the deployed domain is listed in Firebase Authentication authorized domains.
-4. Use direct mode or proxy mode.
+If direct Are.na API calls fail (CORS/rate limits), deploy the Cloudflare Worker:
 
-## Deploy the Are.na proxy
+```
+cd cloudflare-worker
+wrangler deploy
+```
 
-The proxy is optional, but useful if you want a stable endpoint with caching or if direct browser requests to Are.na are blocked by CORS or rate limits.
+Then modify the `CHANNEL` fetch URL in `app.js` to point to your worker.
 
-### Cloudflare Worker
-1. `cd cloudflare-worker`
-2. `npm install -g wrangler` if needed
-3. `wrangler deploy`
-4. Optional: `wrangler secret put ARENA_TOKEN`
-5. Copy your worker URL
-6. In the app, choose `Cloudflare proxy` and paste the worker URL into `Proxy base URL`
+## Deploy
 
-The app calls:
+Upload the `public/` folder to any static host:
+- Cloudflare Pages
+- GitHub Pages
+- Netlify
+- Vercel
+- Any web server
 
-`YOUR_WORKER_URL/api/arena/channel?slug=ffffound-archive&page=1&per=36`
+## Files
 
-## Privacy notes
-
-- In local-only mode, your votes and hidden items stay in your browser unless you export them.
-- In signed-in mode, data is stored in your own Firebase project, not in a third-party backend I run.
-- The included worker only proxies paginated requests. It does not scrape the full archive.
-
-## Suggested next upgrades
-
-- keyboard shortcuts (`j`, `k`, `o`, `↑`, `↓`)
-- palette clustering or lightweight embeddings for stronger visual similarity
-- saved collections / moodboards
-- multi-channel blending
-- friends-only sharing or invite-only accounts
+```
+public/
+  index.html            — app shell
+  styles.css            — editorial dark/light theme
+  app.js                — feed engine, ranking, viewer, folders, Firebase
+  firebase-config.js    — placeholder config (edit to enable sync)
+cloudflare-worker/
+  worker.js             — optional Are.na API proxy
+  wrangler.toml         — Cloudflare Worker config
+firestore.rules         — recommended Firestore security rules
+```

@@ -1,34 +1,92 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>ffffound</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<div id="topbar">
-  <div class="left">ffffound restoration project</div>
-  <div class="right">
-    <button id="folderBtn">▣</button>
-    <button id="themeToggle">◐</button>
+
+<!-- TOP BAR -->
+<nav id="topbar">
+  <span class="wordmark">ffffound</span>
+  <div class="nav-actions">
+    <button id="btnFolders" title="Collections" aria-label="Collections">⊞</button>
+    <button id="btnTheme" title="Toggle theme" aria-label="Toggle theme">◐</button>
+  </div>
+</nav>
+
+<!-- MASONRY FEED -->
+<main id="feed"></main>
+
+<!-- SCROLL SENTINEL -->
+<div id="sentinel"></div>
+
+<!-- LOADING INDICATOR -->
+<div id="loader" class="hidden">
+  <span class="loader-dot"></span>
+  <span class="loader-dot"></span>
+  <span class="loader-dot"></span>
+</div>
+
+<!-- FULLSCREEN VIEWER -->
+<div id="viewer" class="hidden" role="dialog" aria-modal="true">
+  <div id="viewerBackdrop"></div>
+  <img id="viewerImg" alt="">
+  <div id="viewerBar">
+    <button id="vLike" class="v-btn" title="Like (f)" aria-label="Like">♥</button>
+    <button id="vDislike" class="v-btn" title="Dislike (x)" aria-label="Dislike">×</button>
+    <button id="vSave" class="v-btn" title="Save to folder (s)" aria-label="Save to folder">⊞</button>
+    <a id="vDownload" class="v-btn" target="_blank" rel="noopener" title="Open original (o)" aria-label="Open original">↓</a>
+    <button id="vPrev" class="v-btn v-nav" title="Previous (←)" aria-label="Previous">‹</button>
+    <button id="vNext" class="v-btn v-nav" title="Next (→)" aria-label="Next">›</button>
+  </div>
+  <div id="viewerStatus"></div>
+</div>
+
+<!-- SAVE-TO-FOLDER MODAL -->
+<div id="saveModal" class="hidden">
+  <div class="modal-backdrop"></div>
+  <div class="modal-box">
+    <div class="modal-head">
+      <span>save to collection</span>
+      <button id="saveModalClose">×</button>
+    </div>
+    <div id="folderList"></div>
+    <div class="modal-new">
+      <input id="newFolderInput" type="text" placeholder="new collection name" maxlength="40">
+      <button id="newFolderBtn">+</button>
+    </div>
   </div>
 </div>
 
-<div id="grid"></div>
-
-<div id="viewer" class="hidden">
-  <img id="viewerImg">
-  <div id="controls">
-    <button id="like">♥</button>
-    <button id="dislike">×</button>
-    <button id="save">⊞</button>
-    <a id="download" target="_blank">↓</a>
+<!-- FOLDERS / COLLECTIONS PANEL -->
+<div id="foldersPanel" class="hidden">
+  <div class="panel-backdrop"></div>
+  <div class="panel-content">
+    <div class="panel-head">
+      <span>collections</span>
+      <button id="panelClose">×</button>
+    </div>
+    <div id="panelList"></div>
+    <div class="panel-foot">
+      <button id="panelBack" class="hidden">← back to all</button>
+      <div class="panel-actions">
+        <button id="exportBtn" title="Export profile">export</button>
+        <label class="file-label">
+          import
+          <input type="file" id="importInput" accept="application/json" hidden>
+        </label>
+      </div>
+    </div>
   </div>
 </div>
 
-<div id="folders" class="hidden"></div>
-
-<script src="app.js"></script>
+<script src="firebase-config.js"></script>
+<script type="module" src="app.js"></script>
 </body>
 </html>
