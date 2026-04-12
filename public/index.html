@@ -1,160 +1,28 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Private FFFFOUND</title>
-    <meta
-      name="description"
-      content="A minimal, taste-learning image browser for the FFFFOUND archive on Are.na, with optional account sync."
-    />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Inter:wght@400;500;600&display=swap"
-      rel="stylesheet"
-    />
-    <link rel="stylesheet" href="./styles.css" />
-  </head>
-  <body>
-    <div class="shell">
-      <header class="topbar">
-        <div>
-          <p class="eyebrow">personal archive browser</p>
-          <h1>Private FFFFOUND</h1>
-          <p class="lede">
-            A quieter layer over the archive. Upvote, downvote, open, and hide images — the feed learns your taste,
-            and an optional account can sync that taste across browsers.
-          </p>
-        </div>
-        <div class="stats" id="stats"></div>
-      </header>
-
-      <section class="panel account-panel">
-        <div>
-          <p class="eyebrow">account</p>
-          <h2>Your private taste profile</h2>
-          <p class="muted account-copy">
-            Stay local-only, or sign in and sync your preferences to your own Firebase project.
-          </p>
-        </div>
-        <div class="account-box">
-          <div class="account-user" id="accountUser">Local-only mode</div>
-          <div class="account-actions">
-            <button class="ghost" id="signInGoogleBtn">Sign in with Google</button>
-            <button class="ghost" id="signInFacebookBtn">Sign in with Facebook</button>
-            <button class="ghost hidden" id="signOutBtn">Sign out</button>
-          </div>
-          <p class="status auth-status" id="authStatus">Account sync is disabled until you add your Firebase config.</p>
-        </div>
-      </section>
-
-      <section class="panel controls-panel">
-        <div class="controls-grid">
-          <label>
-            <span>Source mode</span>
-            <select id="sourceMode">
-              <option value="direct">Direct Are.na API</option>
-              <option value="proxy">Cloudflare proxy</option>
-              <option value="demo">Demo data</option>
-            </select>
-          </label>
-          <label>
-            <span>Channel slug</span>
-            <input id="channelSlug" type="text" value="ffffound-archive" />
-          </label>
-          <label>
-            <span>Items per page</span>
-            <input id="perPage" type="number" min="12" max="100" value="36" />
-          </label>
-          <label>
-            <span>Proxy base URL</span>
-            <input id="proxyBase" type="text" placeholder="https://your-worker.example.workers.dev" />
-          </label>
-          <label class="wide">
-            <span>Seed words</span>
-            <input id="seedTerms" type="text" placeholder="graphic brutalist glossy weird typography quiet interiors" />
-          </label>
-          <div class="toggles">
-            <label class="check"><input id="hideSeen" type="checkbox" checked /> <span>Hide seen</span></label>
-            <label class="check"><input id="diversify" type="checkbox" checked /> <span>Diversify domains</span></label>
-          </div>
-        </div>
-
-        <div class="toolbar">
-          <div class="tabs" id="tabs"></div>
-          <div class="actions">
-            <button class="ghost" id="refreshBtn">Refresh</button>
-            <button class="ghost" id="loadMoreBtn">Load more</button>
-            <button class="ghost" id="exportBtn">Export profile</button>
-            <label class="ghost file-button">
-              Import profile
-              <input type="file" id="importInput" accept="application/json" hidden />
-            </label>
-            <button class="ghost danger" id="resetBtn">Reset taste</button>
-          </div>
-        </div>
-
-        <p class="status" id="status">Ready.</p>
-      </section>
-
-      <section class="content-grid">
-        <aside class="panel sidebar">
-          <div>
-            <p class="sidebar-kicker">Learned profile</p>
-            <h2>Your signals</h2>
-            <p class="muted">
-              Upvotes and downvotes shift the ranking model. Signed-in mode syncs your settings and interaction history to your own project.
-            </p>
-          </div>
-
-          <div class="signal-block">
-            <h3>Top words</h3>
-            <div class="chips" id="tokenSignals"></div>
-          </div>
-
-          <div class="signal-block">
-            <h3>Top domains</h3>
-            <div class="chips" id="domainSignals"></div>
-          </div>
-
-          <div class="signal-block">
-            <h3>Sync note</h3>
-            <p class="muted small" id="syncNote">
-              Until sign-in is configured, your profile lives only in this browser.
-            </p>
-          </div>
-        </aside>
-
-        <main>
-          <div class="masonry" id="feed"></div>
-          <div class="empty hidden" id="emptyState">
-            <p>No items match this view yet.</p>
-          </div>
-        </main>
-      </section>
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>ffffound v2</title>
+<link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<div id="app">
+  <div id="topbar">
+    <div class="logo">ffffound</div>
+    <div class="controls">
+      <button id="modeBtn">focus</button>
+      <button id="resetBtn">reset taste</button>
     </div>
+  </div>
 
-    <dialog id="viewer">
-      <form method="dialog" class="viewer-shell">
-        <button class="viewer-close" aria-label="Close">×</button>
-        <div class="viewer-media"><img id="viewerImage" alt="" /></div>
-        <div class="viewer-meta">
-          <p class="eyebrow">detail</p>
-          <h3 id="viewerTitle"></h3>
-          <p id="viewerDescription" class="muted"></p>
-          <div id="viewerMeta" class="viewer-lines"></div>
-          <div class="viewer-actions">
-            <button type="button" class="ghost" id="viewerUpvote">Upvote</button>
-            <button type="button" class="ghost" id="viewerDownvote">Downvote</button>
-            <button type="button" class="ghost" id="viewerHide">Hide</button>
-            <a id="viewerLink" class="ghost" href="#" target="_blank" rel="noopener noreferrer">Open source</a>
-          </div>
-        </div>
-      </form>
-    </dialog>
+  <div id="grid"></div>
 
-    <script src="./firebase-config.js"></script>
-    <script type="module" src="./app.js"></script>
-  </body>
+  <div id="focus" class="hidden">
+    <img id="focusImg"/>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
 </html>
