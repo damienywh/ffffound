@@ -6,7 +6,7 @@
     <title>Private FFFFOUND</title>
     <meta
       name="description"
-      content="A minimal, taste-learning image browser for the FFFFOUND archive on Are.na."
+      content="A minimal, taste-learning image browser for the FFFFOUND archive on Are.na, with optional account sync."
     />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -23,11 +23,31 @@
           <p class="eyebrow">personal archive browser</p>
           <h1>Private FFFFOUND</h1>
           <p class="lede">
-            A quieter layer over the archive. Upvote, downvote, open, and hide images — the feed will start shaping itself around your taste.
+            A quieter layer over the archive. Upvote, downvote, open, and hide images — the feed learns your taste,
+            and an optional account can sync that taste across browsers.
           </p>
         </div>
         <div class="stats" id="stats"></div>
       </header>
+
+      <section class="panel account-panel">
+        <div>
+          <p class="eyebrow">account</p>
+          <h2>Your private taste profile</h2>
+          <p class="muted account-copy">
+            Stay local-only, or sign in and sync your preferences to your own Firebase project.
+          </p>
+        </div>
+        <div class="account-box">
+          <div class="account-user" id="accountUser">Local-only mode</div>
+          <div class="account-actions">
+            <button class="ghost" id="signInGoogleBtn">Sign in with Google</button>
+            <button class="ghost" id="signInFacebookBtn">Sign in with Facebook</button>
+            <button class="ghost hidden" id="signOutBtn">Sign out</button>
+          </div>
+          <p class="status auth-status" id="authStatus">Account sync is disabled until you add your Firebase config.</p>
+        </div>
+      </section>
 
       <section class="panel controls-panel">
         <div class="controls-grid">
@@ -84,7 +104,7 @@
             <p class="sidebar-kicker">Learned profile</p>
             <h2>Your signals</h2>
             <p class="muted">
-              Likes and dislikes are stored locally in your browser. The feed boosts matching words, domains, shapes, and recent positive interactions.
+              Upvotes and downvotes shift the ranking model. Signed-in mode syncs your settings and interaction history to your own project.
             </p>
           </div>
 
@@ -99,9 +119,9 @@
           </div>
 
           <div class="signal-block">
-            <h3>Export tip</h3>
-            <p class="muted small">
-              Export your profile to move your taste graph between browsers or keep a backup before pushing updates.
+            <h3>Sync note</h3>
+            <p class="muted small" id="syncNote">
+              Until sign-in is configured, your profile lives only in this browser.
             </p>
           </div>
         </aside>
@@ -134,6 +154,7 @@
       </form>
     </dialog>
 
-    <script src="./app.js"></script>
+    <script src="./firebase-config.js"></script>
+    <script type="module" src="./app.js"></script>
   </body>
 </html>

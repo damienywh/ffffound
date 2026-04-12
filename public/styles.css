@@ -80,7 +80,8 @@ h3 {
   margin-bottom: 10px;
 }
 
-.lede {
+.lede,
+.account-copy {
   max-width: 54ch;
   color: var(--muted);
   line-height: 1.7;
@@ -95,9 +96,40 @@ h3 {
   box-shadow: var(--shadow);
 }
 
+.account-panel,
 .controls-panel {
   padding: 20px;
   margin-bottom: 22px;
+}
+
+.account-panel {
+  display: grid;
+  grid-template-columns: 1fr minmax(280px, 420px);
+  gap: 18px;
+  align-items: center;
+}
+
+.account-box {
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  padding: 16px;
+  background: rgba(255,255,255,0.56);
+}
+
+.account-user {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.auth-status {
+  margin-bottom: 0;
 }
 
 .controls-grid {
@@ -379,7 +411,8 @@ dialog::backdrop {
   .content-grid,
   .viewer-shell,
   .topbar,
-  .toolbar {
+  .toolbar,
+  .account-panel {
     grid-template-columns: 1fr;
     display: grid;
   }
