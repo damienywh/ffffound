@@ -1,47 +1,68 @@
 // ════════════════════════════════════════════════════════════
-// FFFFOUND ARCHIVE — v8
+// FFFFOUND ARCHIVE — v8.1
 // Multi-source · Are.na + Tumblr · taste engine · infinite scroll
 // ════════════════════════════════════════════════════════════
 
-// ── CONFIG — edit these ──────────────────────────────────────
-// Replace with your new Tumblr consumer key (read-only, safe in frontend)
-const TUMBLR_KEY = window.FFFFOUND_CONFIG?.tumblrKey || 'YOUR_TUMBLR_CONSUMER_KEY';
+// ── CONFIG ───────────────────────────────────────────────────
+// Set your Tumblr consumer key in firebase-config.js as:
+//   window.FFFFOUND_CONFIG = { tumblrKey: 'your_key_here' }
+const TUMBLR_KEY = window.FFFFOUND_CONFIG?.tumblrKey || '';
 
-// Sources: each entry is { type, id/slug, label }
-// Add/remove sources here — the engine handles the rest
+// ── SOURCES ──────────────────────────────────────────────────
+// Add/remove entries freely. type: 'arena' or 'tumblr'.
+// All 404/gone blogs are skipped gracefully at runtime.
 const SOURCES = [
-  // Are.na channels
-  { type: 'arena',  slug: 'ffffound-archive',          label: 'ffffound archive' },
+  // ── Are.na ──
+  { type: 'arena',  slug: 'ffffound-archive',        label: 'ffffound archive' },
 
-  // Tumblr blogs — high-quality image curators, ffffound-adjacent aesthetic
-  { type: 'tumblr', blog: 'nevver',                    label: 'this isn\'t happiness' },
-  { type: 'tumblr', blog: 'baubauhaus',                label: 'baubauhaus' },
-  { type: 'tumblr', blog: 'ilovecreativephotography',  label: 'i love creative photography' },
-  { type: 'tumblr', blog: 'itscolossal',               label: 'colossal' },
-  { type: 'tumblr', blog: 'cross-connect',             label: 'cross connect' },
-  { type: 'tumblr', blog: 'sosuperawesome',            label: 'so super awesome' },
-  { type: 'tumblr', blog: 'fer1972',                   label: 'classical art' },
-  { type: 'tumblr', blog: 'escapekit',                 label: 'escape kit' },
-  { type: 'tumblr', blog: 'asylum-art',                label: 'asylum art' },
+  // ── Tumblr — verified large image-curation blogs ──
+  // ~106k photo posts — the spiritual successor to ffffound
+  { type: 'tumblr', blog: 'nevver',                  label: 'this isn\'t happiness' },
+  // ~50k — fine art, illustration, surrealism
+  { type: 'tumblr', blog: 'cross-connect',           label: 'cross connect' },
+  // ~80k — classical & modern painting
+  { type: 'tumblr', blog: 'fer1972',                 label: 'fine art' },
+  // ~30k — design, craft, illustration
+  { type: 'tumblr', blog: 'sosuperawesome',          label: 'so super awesome' },
+  // ~25k — graphic design, typography, branding
+  { type: 'tumblr', blog: 'visualgraphc',            label: 'visual graphic' },
+  // ~20k — moody photography, dark aesthetic
+  { type: 'tumblr', blog: 'darksilenceinsuburbia',   label: 'dark silence' },
+  // ~15k — architecture & maps
+  { type: 'tumblr', blog: 'archimaps',               label: 'archimaps' },
+  // ~40k — eclectic art & photography curation
+  { type: 'tumblr', blog: 'likeafieldmouse',         label: 'like a field mouse' },
+  // ~10k — photography & design escape kit
+  { type: 'tumblr', blog: 'escapekit',               label: 'escape kit' },
+  // ~20k — photography, nature, art
+  { type: 'tumblr', blog: 'foxesinbreeches',         label: 'foxes in breeches' },
+  // ~15k — lensblr photography network
+  { type: 'tumblr', blog: 'lensblr-network',         label: 'lensblr' },
+  // ~8k — floating memos, design/art
+  { type: 'tumblr', blog: 'floatingmemos',           label: 'floating memos' },
+  // ~12k — books, paper, scissors — design/typography
+  { type: 'tumblr', blog: 'bookspaperscissors',      label: 'books paper scissors' },
+  // ~6k — jjjjound aesthetic (if accessible)
+  { type: 'tumblr', blog: 'jjjjound',                label: 'jjjjound' },
 ];
-// ────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
 
 const DECAY = 0.92;
 const STOP = new Set('the and for with from this that into your their have been just only also very about some over more than were then when what will would could there them they like image photo untitled www http https jpeg png jpg gif webp block attachment upload source none null undefined'.split(' '));
 const K = { ix: 'ff8-ix', fo: 'ff8-fo', st: 'ff8-st' };
 
-// ── SOURCE STATE ──
-// Each source tracks its own cursor independently
+// ── PER-SOURCE STATE ──────────────────────────────────────────
 const sourceState = SOURCES.map(src => ({
   ...src,
-  page: 1,       // Are.na page / Tumblr offset ÷ 20
-  offset: 0,     // Tumblr offset
+  page: 1,
+  offset: 0,
   done: false,
   totalPages: null,
+  error: false,
 }));
-let sourceIdx = 0; // round-robin pointer
+let sourceIdx = 0;
 
-// ── APP STATE ──
+// ── APP STATE ─────────────────────────────────────────────────
 const S = {
   pool: new Map(),
   rendered: new Set(),
@@ -51,13 +72,13 @@ const S = {
   fo: ld(K.fo, {}),
   cfg: ld(K.st, { theme: 'light' }),
   vOpen: false, vIdx: -1, vList: [],
-  fb: { enabled: false, auth: null, db: null, user: null }
+  fb: { enabled: false, auth: null, db: null, user: null },
 };
 
 const $ = id => document.getElementById(id);
 const feed = $('feed'), sentinel = $('sentinel'), loader = $('loader');
 
-// ── STATUS BAR ──
+// ── STATUS BAR ───────────────────────────────────────────────
 function updateStatus() {
   let el = document.getElementById('statusBar');
   if (!el) {
@@ -66,18 +87,20 @@ function updateStatus() {
     el.style.cssText = [
       'position:fixed;bottom:14px;right:16px;z-index:100',
       'font-size:10px;letter-spacing:.07em;color:var(--muted)',
-      'opacity:0.65;pointer-events:none;text-align:right',
-      'font-family:var(--mono,"SF Mono",monospace)',
-      'line-height:1.6'
+      'opacity:0.6;pointer-events:none;text-align:right',
+      'font-family:var(--mono,"SF Mono",ui-monospace,monospace)',
+      'line-height:1.7',
     ].join(';');
     document.body.appendChild(el);
   }
-  const active = sourceState.filter(s => !s.done).map(s => s.label).join(', ');
   const done = sourceState.filter(s => s.done).length;
-  el.innerHTML = `${S.pool.size.toLocaleString()} images<br>${done}/${sourceState.length} sources complete`;
+  const active = sourceState.filter(s => !s.done && !s.error).map(s => s.label).join(' · ');
+  el.innerHTML =
+    `${S.pool.size.toLocaleString()} images · ${done}/${sourceState.length} sources` +
+    (active ? `<br><span style="opacity:.5">${active}</span>` : '');
 }
 
-// ── INIT ──
+// ── INIT ─────────────────────────────────────────────────────
 (async () => {
   applyTheme();
   bind();
@@ -88,22 +111,16 @@ function updateStatus() {
   if (cfg?.enabled && cfg?.config?.apiKey) initFB(cfg);
 })();
 
-// ── FETCH DISPATCHER — round-robin across sources ──
+// ── FETCH DISPATCHER — round-robin ───────────────────────────
 async function fetchNext() {
   if (S.loading) return;
-
-  // Find next non-done source (round-robin)
   let attempts = 0;
   while (attempts < sourceState.length) {
     const src = sourceState[sourceIdx % sourceState.length];
     sourceIdx++;
     attempts++;
-    if (!src.done) {
-      await fetchSource(src);
-      return;
-    }
+    if (!src.done) { await fetchSource(src); return; }
   }
-  // All sources exhausted
   S.hasMore = false;
   updateStatus();
 }
@@ -131,65 +148,79 @@ async function fetchSource(src) {
     }
     updateStatus();
   } catch (err) {
-    console.warn(`[${src.label}] fetch failed`, err);
-    // Don't mark done on transient errors — will retry next round
+    console.warn(`[${src.label}] fetch error`, err);
+    src.error = true;
+    // Don't permanently mark done — will retry on next scroll
   } finally {
     S.loading = false;
     loader.classList.add('off');
   }
-  // Re-check if anything left
   if (sourceState.every(s => s.done)) S.hasMore = false;
 }
 
-// ── ARE.NA ADAPTER ──
+// ── ARE.NA ADAPTER ───────────────────────────────────────────
 async function fetchArena(src) {
   const url = `https://api.are.na/v2/channels/${src.slug}/contents?page=${src.page}&per=100`;
   const res = await fetch(url, { headers: { Accept: 'application/json' } });
-  if (!res.ok) throw new Error(`Are.na HTTP ${res.status}`);
+  if (!res.ok) throw new Error(`Are.na ${res.status}`);
   const json = await res.json();
 
-  const meta = json.meta || json;
+  // FIX: Are.na caps total_pages at 999 — use length/100 for the real count
   if (src.totalPages === null) {
-    src.totalPages = meta.total_pages || Math.ceil((meta.length || 0) / 100) || 999;
-    console.log(`[Are.na:${src.slug}] ${src.totalPages} pages`);
+    const realLength = json.length || json.meta?.length || 0;
+    src.totalPages = realLength > 0
+      ? Math.ceil(realLength / 100)
+      : (json.total_pages || json.meta?.total_pages || 999);
+    console.log(`[Are.na:${src.slug}] length=${realLength}, real pages=${src.totalPages}`);
   }
 
   const raw = (json.contents || json.data || []).filter(x => x.image);
-  if (raw.length === 0 || src.page >= src.totalPages) {
+  if (raw.length === 0 || src.page > src.totalPages) {
     src.done = true;
-    console.log(`[Are.na:${src.slug}] complete`);
+    console.log(`[Are.na:${src.slug}] complete at page ${src.page}`);
     return [];
   }
   src.page++;
+
   return raw.map(r => {
     const img = r.image || {};
     return {
-      id: `arena-${r.id}`,
-      thumb: img.display?.url || img.thumb?.url || img.original?.url || '',
-      full:  img.original?.url || img.display?.url || '',
-      title: r.title || r.generated_title || '',
-      desc:  r.description || r.content || '',
+      id:     `arena-${r.id}`,
+      thumb:  img.display?.url || img.thumb?.url || img.original?.url || '',
+      full:   img.original?.url || img.display?.url || '',
+      title:  r.title || r.generated_title || '',
+      desc:   r.description || r.content || '',
       domain: safeDomain(r.source?.url || ''),
-      w: img.original?.width  || img.display?.width  || 1000,
-      h: img.original?.height || img.display?.height || 1000,
+      w:      img.original?.width  || img.display?.width  || 1000,
+      h:      img.original?.height || img.display?.height || 1000,
       source: src.label,
+      tags:   [],
     };
   });
 }
 
-// ── TUMBLR ADAPTER ──
+// ── TUMBLR ADAPTER ───────────────────────────────────────────
 async function fetchTumblr(src) {
-  if (TUMBLR_KEY === 'YOUR_TUMBLR_CONSUMER_KEY') {
-    console.warn('Tumblr key not configured — skipping', src.blog);
+  if (!TUMBLR_KEY) {
+    console.warn('[Tumblr] No key configured — set window.FFFFOUND_CONFIG.tumblrKey');
     src.done = true;
     return [];
   }
-  const url = `https://api.tumblr.com/v2/blog/${src.blog}.tumblr.com/posts/photo?api_key=${TUMBLR_KEY}&limit=20&offset=${src.offset}&npf=false`;
+
+  const url = `https://api.tumblr.com/v2/blog/${src.blog}.tumblr.com/posts/photo` +
+    `?api_key=${TUMBLR_KEY}&limit=20&offset=${src.offset}&npf=false`;
   const res = await fetch(url);
-  if (!res.ok) {
-    if (res.status === 404 || res.status === 401) { src.done = true; return []; }
-    throw new Error(`Tumblr HTTP ${res.status}`);
+
+  if (res.status === 404) {
+    console.warn(`[Tumblr:${src.blog}] 404 — blog not found or moved, skipping`);
+    src.done = true; return [];
   }
+  if (res.status === 401 || res.status === 403) {
+    console.warn(`[Tumblr:${src.blog}] auth error ${res.status}, skipping`);
+    src.done = true; return [];
+  }
+  if (!res.ok) throw new Error(`Tumblr ${res.status}`);
+
   const json = await res.json();
   const resp = json.response || {};
 
@@ -201,56 +232,63 @@ async function fetchTumblr(src) {
 
   const posts = resp.posts || [];
   if (posts.length === 0) { src.done = true; return []; }
+
   src.offset += 20;
-  if (src.offset >= (src.totalPages * 20)) src.done = true;
+  // Tumblr API won't return beyond offset 20000 (their hard cap)
+  if (src.offset >= Math.min(src.totalPages * 20, 20000)) src.done = true;
 
   const items = [];
   for (const post of posts) {
-    // Each Tumblr photo post can have multiple photos
     const photos = post.photos || [];
     if (!photos.length) continue;
     photos.forEach((photo, i) => {
       const sizes = photo.alt_sizes || [];
-      // Pick best size ≤1280px wide, fallback to original
-      const best = sizes.find(s => s.width <= 1280) || sizes[0] || {};
-      const orig = sizes[sizes.length - 1] || {}; // largest
-      if (!best.url) return;
+      if (!sizes.length) return;
+      // Best display size ≤ 1280px wide
+      const best = sizes.find(s => s.width <= 1280) || sizes[0];
+      // Largest for full view
+      const orig = [...sizes].sort((a, b) => b.width - a.width)[0];
+      if (!best?.url) return;
+      const caption = (post.caption || '').replace(/<[^>]*>/g, '').trim();
       items.push({
-        id: `tumblr-${post.id}-${i}`,
-        thumb: best.url,
-        full:  orig.url || best.url,
-        title: post.summary || post.caption?.replace(/<[^>]*>/g, '').slice(0, 80) || '',
-        desc:  post.caption?.replace(/<[^>]*>/g, '').slice(0, 200) || '',
-        domain: safeDomain(post.post_url || ''),
-        w: best.width  || 800,
-        h: best.height || 600,
+        id:     `tumblr-${post.id}-${i}`,
+        thumb:  best.url,
+        full:   orig?.url || best.url,
+        title:  post.summary || caption.slice(0, 80) || '',
+        desc:   caption.slice(0, 200),
+        domain: safeDomain(post.post_url || `${src.blog}.tumblr.com`),
+        w:      best.width  || 800,
+        h:      best.height || 600,
         source: src.label,
-        tags: post.tags || [],
+        tags:   post.tags || [],
       });
     });
   }
   return items;
 }
 
-// ── SCORING ──
+// ── SCORING ──────────────────────────────────────────────────
 function buildProfile() {
   const tw = {}, dw = {}, aw = {};
-  const entries = Object.entries(S.ix).filter(([, v]) => v.score).sort((a, b) => (b[1].ts || 0) - (a[1].ts || 0));
+  const entries = Object.entries(S.ix)
+    .filter(([, v]) => v.score)
+    .sort((a, b) => (b[1].ts || 0) - (a[1].ts || 0));
   entries.forEach(([id, v], i) => {
     const item = S.pool.get(id);
     if (!item) return;
     const w = v.score * Math.pow(DECAY, i);
-    for (const t of tok(`${item.title} ${item.desc} ${item.domain} ${(item.tags||[]).join(' ')}`)) tw[t] = (tw[t] || 0) + w;
+    const text = `${item.title} ${item.desc} ${item.domain} ${(item.tags || []).join(' ')}`;
+    for (const t of tok(text)) tw[t] = (tw[t] || 0) + w;
     if (item.domain) dw[item.domain] = (dw[item.domain] || 0) + w;
-    const a = aspect(item);
-    aw[a] = (aw[a] || 0) + w;
+    aw[aspect(item)] = (aw[aspect(item)] || 0) + w;
   });
   return { tw, dw, aw };
 }
 
 function scoreItem(item, profile) {
   let s = 0;
-  for (const t of tok(`${item.title} ${item.desc} ${item.domain} ${(item.tags||[]).join(' ')}`)) s += (profile.tw[t] || 0) * 2.5;
+  const text = `${item.title} ${item.desc} ${item.domain} ${(item.tags || []).join(' ')}`;
+  for (const t of tok(text)) s += (profile.tw[t] || 0) * 2.5;
   s += (profile.dw[item.domain] || 0) * 3;
   s += (profile.aw[aspect(item)] || 0) * 3;
   const ix = S.ix[item.id];
@@ -260,44 +298,37 @@ function scoreItem(item, profile) {
   return s;
 }
 
-function hashId(id) { let h = 0; for (let i = 0; i < id.length; i++) h = ((h << 5) - h + id.charCodeAt(i)) | 0; return Math.abs(h); }
+function hashId(id) {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = ((h << 5) - h + id.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
 
-// ── RENDER — APPEND ONLY ──
+// ── RENDER ───────────────────────────────────────────────────
 function appendCards(items) {
   const frag = document.createDocumentFragment();
   for (const item of items) {
     if (S.rendered.has(item.id)) continue;
     S.rendered.add(item.id);
-
     const card = document.createElement('div');
-    card.className = 'c';
-    card.dataset.id = item.id;
-
+    card.className = 'c'; card.dataset.id = item.id;
     const img = document.createElement('img');
-    img.loading = 'lazy';
-    img.src = item.thumb;
-    img.alt = '';
+    img.loading = 'lazy'; img.src = item.thumb; img.alt = '';
     img.onload = () => img.classList.add('ok');
     img.onerror = () => card.remove();
-
-    const overlay = document.createElement('div');
-    overlay.className = 'ho';
+    const overlay = document.createElement('div'); overlay.className = 'ho';
     const bLike = document.createElement('button');
     bLike.textContent = '♥'; bLike.title = 'Like';
     bLike.onclick = e => { e.stopPropagation(); quickVote(item, 1, card); };
     const bDis = document.createElement('button');
     bDis.textContent = '×'; bDis.title = 'Hide';
     bDis.onclick = e => { e.stopPropagation(); quickVote(item, -1, card); };
-    overlay.appendChild(bLike);
-    overlay.appendChild(bDis);
-
+    overlay.appendChild(bLike); overlay.appendChild(bDis);
     const ix = S.ix[item.id];
-    if (ix && ix.score > 0) bLike.classList.add('hl');
-    if (ix && ix.score < 0) bDis.classList.add('hd');
-
+    if (ix?.score > 0) bLike.classList.add('hl');
+    if (ix?.score < 0) bDis.classList.add('hd');
     updateBadge(card, item.id);
-    card.appendChild(img);
-    card.appendChild(overlay);
+    card.appendChild(img); card.appendChild(overlay);
     card.onclick = () => openViewer(item);
     frag.appendChild(card);
   }
@@ -305,32 +336,30 @@ function appendCards(items) {
 }
 
 function updateBadge(card, id) {
-  let badge = card.querySelector('.badge');
+  let b = card.querySelector('.badge');
   const ix = S.ix[id];
-  if (ix && ix.score > 0) {
-    if (!badge) { badge = document.createElement('span'); card.appendChild(badge); }
-    badge.className = 'badge bl'; badge.textContent = '♥';
-  } else { if (badge) badge.remove(); }
+  if (ix?.score > 0) {
+    if (!b) { b = document.createElement('span'); card.appendChild(b); }
+    b.className = 'badge bl'; b.textContent = '♥';
+  } else if (b) b.remove();
 }
 
-// ── QUICK VOTE ──
+// ── VOTE ─────────────────────────────────────────────────────
 function quickVote(item, val, card) {
   const ix = S.ix[item.id] || { score: 0, seen: true, ts: Date.now() };
-  if (ix.score === val) ix.score = 0;
-  else ix.score = clamp(ix.score + val, -3, 5);
+  ix.score = ix.score === val ? 0 : clamp(ix.score + val, -3, 5);
   ix.seen = true; ix.ts = Date.now();
-  S.ix[item.id] = ix;
-  sv(K.ix, S.ix);
+  S.ix[item.id] = ix; sv(K.ix, S.ix);
   updateBadge(card, item.id);
   const ol = card.querySelector('.ho');
-  if (ol) { const btns = ol.querySelectorAll('button'); btns[0].classList.toggle('hl', ix.score > 0); btns[1].classList.toggle('hd', ix.score < 0); }
+  if (ol) { const b = ol.querySelectorAll('button'); b[0].classList.toggle('hl', ix.score > 0); b[1].classList.toggle('hd', ix.score < 0); }
   if (val > 0) toast('liked');
   else if (val < 0) { toast('hidden from feed'); card.classList.add('killed'); }
   else toast('vote cleared');
   syncPush(item.id);
 }
 
-// ── INFINITE SCROLL ──
+// ── SCROLL ───────────────────────────────────────────────────
 function observeScroll() {
   new IntersectionObserver(async ([e]) => {
     if (!e.isIntersecting || S.loading) return;
@@ -338,14 +367,12 @@ function observeScroll() {
   }, { rootMargin: '1200px' }).observe(sentinel);
 }
 
-// ── VIEWER ──
+// ── VIEWER ───────────────────────────────────────────────────
 function openViewer(item) {
-  S.vList = [...S.pool.values()].filter(i => { const ix = S.ix[i.id]; return !(ix && ix.score < -1); });
-  S.vIdx = S.vList.findIndex(i => i.id === item.id);
-  if (S.vIdx < 0) S.vIdx = 0;
+  S.vList = [...S.pool.values()].filter(i => { const ix = S.ix[i.id]; return !(ix?.score < -1); });
+  S.vIdx = Math.max(0, S.vList.findIndex(i => i.id === item.id));
   S.vOpen = true; showV();
-  $('vw').classList.add('on');
-  document.body.style.overflow = 'hidden';
+  $('vw').classList.add('on'); document.body.style.overflow = 'hidden';
   markSeen(item.id);
 }
 function closeViewer() { S.vOpen = false; $('vw').classList.remove('on'); document.body.style.overflow = ''; }
@@ -364,15 +391,14 @@ function curV() { return S.vList[S.vIdx] || null; }
 function voteV(val) {
   const item = curV(); if (!item) return;
   const ix = S.ix[item.id] || { score: 0, seen: true, ts: Date.now() };
-  if (ix.score === val) ix.score = 0;
-  else ix.score = clamp(ix.score + val, -3, 5);
+  ix.score = ix.score === val ? 0 : clamp(ix.score + val, -3, 5);
   ix.seen = true; ix.ts = Date.now();
   S.ix[item.id] = ix; sv(K.ix, S.ix); showV();
   const card = feed.querySelector(`[data-id="${item.id}"]`);
   if (card) {
     updateBadge(card, item.id);
     const ol = card.querySelector('.ho');
-    if (ol) { const btns = ol.querySelectorAll('button'); btns[0].classList.toggle('hl', ix.score > 0); btns[1].classList.toggle('hd', ix.score < 0); }
+    if (ol) { const b = ol.querySelectorAll('button'); b[0].classList.toggle('hl', ix.score > 0); b[1].classList.toggle('hd', ix.score < 0); }
     if (ix.score < -1) card.classList.add('killed');
   }
   if (val > 0) toast('liked');
@@ -387,8 +413,8 @@ function markSeen(id) {
   S.ix[id] = ix; sv(K.ix, S.ix);
 }
 
-// ── SAVE / FOLDERS ──
-function openSM() { const item = curV(); if (!item) return; $('sm').classList.add('on'); renderFL(item.id); }
+// ── FOLDERS / PANEL ──────────────────────────────────────────
+function openSM() { const i = curV(); if (!i) return; $('sm').classList.add('on'); renderFL(i.id); }
 function closeSM() { $('sm').classList.remove('on'); }
 function renderFL(iid) {
   const fl = $('fl'); fl.innerHTML = '';
@@ -396,8 +422,7 @@ function renderFL(iid) {
   if (!names.length) { fl.innerHTML = '<div style="padding:20px 14px;color:var(--muted);font-size:11px;text-align:center">no collections yet</div>'; return; }
   names.forEach(n => {
     const ids = S.fo[n], inf = ids.includes(iid);
-    const d = document.createElement('div');
-    d.className = 'fi' + (inf ? ' in' : '');
+    const d = document.createElement('div'); d.className = 'fi' + (inf ? ' in' : '');
     d.innerHTML = `<span>${esc(n)}</span><span class="ct">${ids.length}${inf ? ' ✓' : ''}</span>`;
     d.onclick = () => { toggleInF(n, iid); renderFL(iid); };
     fl.appendChild(d);
@@ -407,16 +432,14 @@ function createF() {
   const n = $('nfi').value.trim(); if (!n) return;
   if (S.fo[n]) { toast('exists'); return; }
   S.fo[n] = []; sv(K.fo, S.fo); $('nfi').value = ''; toast(`created "${n}"`);
-  const item = curV(); if (item && $('sm').classList.contains('on')) renderFL(item.id);
+  const i = curV(); if (i && $('sm').classList.contains('on')) renderFL(i.id);
 }
 function toggleInF(fn, iid) {
-  const ids = S.fo[fn] || [];
-  const i = ids.indexOf(iid);
+  const ids = S.fo[fn] || []; const i = ids.indexOf(iid);
   if (i >= 0) { ids.splice(i, 1); toast('removed'); } else { ids.push(iid); toast(`saved to "${fn}"`); }
   S.fo[fn] = ids; sv(K.fo, S.fo);
 }
 
-// ── PANEL ──
 let pMode = 'list', pFolder = null;
 function openPN() { $('pn').classList.add('on'); pMode = 'list'; pFolder = null; renderPN(); }
 function closePN() { $('pn').classList.remove('on'); }
@@ -426,8 +449,8 @@ function renderPN() {
   $('pnU').innerHTML = u
     ? `<span>${esc(u.displayName || u.email || 'signed in')}</span><button id="soBtn">sign out</button>`
     : `<span>local mode</span>${S.fb.enabled ? '<button id="siBtn">sign in</button>' : ''}`;
-  if (u) $('soBtn')?.addEventListener('click', signOut);
-  else $('siBtn')?.addEventListener('click', signIn);
+  $('soBtn')?.addEventListener('click', signOut);
+  $('siBtn')?.addEventListener('click', signIn);
   if (pMode === 'list') renderPL(); else renderPF();
 }
 function renderPL() {
@@ -436,8 +459,8 @@ function renderPL() {
   const dc = Object.values(S.ix).filter(v => v.score < 0).length;
   const st = document.createElement('div');
   st.style.cssText = 'padding:12px 16px;font-size:10px;color:var(--muted);letter-spacing:.08em;border-bottom:1px solid var(--line)';
-  const srcSummary = sourceState.map(s => `${s.label} (${s.done ? '✓' : '…'})`).join(' · ');
-  st.innerHTML = `${lc} liked · ${dc} hidden · ${S.pool.size} loaded<br><span style="opacity:.6">${srcSummary}</span>`;
+  const srcLines = sourceState.map(s => `${s.done ? '✓' : s.error ? '!' : '…'} ${s.label}`).join('  ');
+  st.innerHTML = `${lc} liked · ${dc} hidden · ${S.pool.size.toLocaleString()} loaded<br><span style="opacity:.55;font-size:9px">${srcLines}</span>`;
   pl.appendChild(st);
   if (lc > 0) { const d = document.createElement('div'); d.className = 'pf'; d.innerHTML = `<span>♥ all liked</span><span class="fc">${lc}</span>`; d.onclick = () => { pMode = 'folder'; pFolder = '__liked__'; renderPN(); }; pl.appendChild(d); }
   const names = Object.keys(S.fo).sort();
@@ -456,9 +479,9 @@ function renderPL() {
 }
 function renderPF() {
   const pl = $('pl'); pl.innerHTML = '';
-  let ids;
-  if (pFolder === '__liked__') ids = Object.entries(S.ix).filter(([, v]) => v.score > 0).sort((a, b) => (b[1].ts || 0) - (a[1].ts || 0)).map(([id]) => id);
-  else ids = S.fo[pFolder] || [];
+  const ids = pFolder === '__liked__'
+    ? Object.entries(S.ix).filter(([, v]) => v.score > 0).sort((a, b) => (b[1].ts || 0) - (a[1].ts || 0)).map(([id]) => id)
+    : (S.fo[pFolder] || []);
   if (!ids.length) { pl.innerHTML = '<div style="padding:30px 16px;color:var(--muted);font-size:11px;text-align:center">empty</div>'; return; }
   const g = document.createElement('div'); g.className = 'pgrid';
   ids.forEach(id => {
@@ -470,7 +493,7 @@ function renderPF() {
   pl.appendChild(g);
 }
 
-// ── EVENTS ──
+// ── EVENTS ───────────────────────────────────────────────────
 function bind() {
   $('bTheme').onclick = () => { S.cfg.theme = S.cfg.theme === 'dark' ? 'light' : 'dark'; sv(K.st, S.cfg); applyTheme(); };
   $('bFold').onclick = openPN;
@@ -490,17 +513,30 @@ function bind() {
   $('expB').onclick = exportP;
   $('impI').onchange = importP;
   document.addEventListener('keydown', e => {
-    if (S.vOpen) { if (e.key === 'Escape') closeViewer(); else if (e.key === 'ArrowRight' || e.key === 'j') navV(1); else if (e.key === 'ArrowLeft' || e.key === 'k') navV(-1); else if (e.key === 'f') voteV(1); else if (e.key === 'x') voteV(-1); else if (e.key === 's') openSM(); else if (e.key === 'o') { const i = curV(); if (i) window.open(i.full, '_blank'); } return; }
+    if (S.vOpen) {
+      if (e.key === 'Escape') closeViewer();
+      else if (e.key === 'ArrowRight' || e.key === 'j') navV(1);
+      else if (e.key === 'ArrowLeft'  || e.key === 'k') navV(-1);
+      else if (e.key === 'f') voteV(1);
+      else if (e.key === 'x') voteV(-1);
+      else if (e.key === 's') openSM();
+      else if (e.key === 'o') { const i = curV(); if (i) window.open(i.full, '_blank'); }
+      return;
+    }
     if ($('sm').classList.contains('on')) { if (e.key === 'Escape') closeSM(); return; }
     if ($('pn').classList.contains('on')) { if (e.key === 'Escape') closePN(); return; }
   });
   let tx = 0;
   $('vw').addEventListener('touchstart', e => { tx = e.touches[0].clientX; }, { passive: true });
-  $('vw').addEventListener('touchend', e => { if (!S.vOpen) return; const dx = e.changedTouches[0].clientX - tx; if (Math.abs(dx) > 60) navV(dx < 0 ? 1 : -1); }, { passive: true });
+  $('vw').addEventListener('touchend', e => {
+    if (!S.vOpen) return;
+    const dx = e.changedTouches[0].clientX - tx;
+    if (Math.abs(dx) > 60) navV(dx < 0 ? 1 : -1);
+  }, { passive: true });
 }
 function applyTheme() { document.body.classList.toggle('dark', S.cfg.theme === 'dark'); }
 
-// ── FIREBASE (optional) ──
+// ── FIREBASE ─────────────────────────────────────────────────
 async function initFB(cfg) {
   try {
     const { initializeApp } = await import('https://www.gstatic.com/firebasejs/12.12.0/firebase-app.js');
@@ -516,15 +552,9 @@ async function initFB(cfg) {
     });
   } catch (e) { console.error('Firebase failed', e); }
 }
-async function signIn() {
-  if (!S.fb.auth) return;
-  try { await S.fb._A.signInWithPopup(S.fb.auth, new S.fb._A.GoogleAuthProvider()); }
-  catch (e) { toast('sign-in failed'); console.error(e); }
-}
-async function signOut() {
-  if (!S.fb.auth) return;
-  await S.fb._A.signOut(S.fb.auth); S.fb.user = null; toast('signed out'); renderPN();
-}
+async function signIn() { try { await S.fb._A.signInWithPopup(S.fb.auth, new S.fb._A.GoogleAuthProvider()); } catch (e) { toast('sign-in failed'); } }
+async function signOut() { await S.fb._A.signOut(S.fb.auth); S.fb.user = null; toast('signed out'); renderPN(); }
+
 let syncT = null;
 function syncPush(iid) {
   if (!S.fb.user || !S.fb.db) return;
@@ -550,21 +580,24 @@ async function pullCloud() {
   } catch (e) { console.error('pull error', e); }
 }
 
-// ── EXPORT / IMPORT ──
+// ── EXPORT / IMPORT ──────────────────────────────────────────
 function exportP() {
   const b = new Blob([JSON.stringify({ interactions: S.ix, folders: S.fo, settings: S.cfg }, null, 2)], { type: 'application/json' });
-  const u = URL.createObjectURL(b); const a = document.createElement('a'); a.href = u; a.download = 'ffffound-profile.json'; a.click(); URL.revokeObjectURL(u); toast('exported');
+  const u = URL.createObjectURL(b); const a = document.createElement('a');
+  a.href = u; a.download = 'ffffound-profile.json'; a.click(); URL.revokeObjectURL(u); toast('exported');
 }
 async function importP(e) {
   const f = e.target.files?.[0]; if (!f) return;
-  try { const p = JSON.parse(await f.text());
+  try {
+    const p = JSON.parse(await f.text());
     if (p.interactions) Object.entries(p.interactions).forEach(([k, v]) => { const c = S.ix[k]; if (!c || (v.ts || 0) > (c.ts || 0)) S.ix[k] = v; });
     if (p.folders) Object.entries(p.folders).forEach(([n, ids]) => { S.fo[n] = [...new Set([...(S.fo[n] || []), ...ids])]; });
     sv(K.ix, S.ix); sv(K.fo, S.fo); toast('imported');
-  } catch { toast('import failed'); } e.target.value = '';
+  } catch { toast('import failed'); }
+  e.target.value = '';
 }
 
-// ── UTILS ──
+// ── UTILS ────────────────────────────────────────────────────
 function tok(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9\s-]/g, ' ').split(/\s+/).filter(t => t.length > 2 && !STOP.has(t)); }
 function aspect(i) { const r = (i.w || 1) / (i.h || 1); return r < 0.82 ? 'portrait' : r > 1.18 ? 'landscape' : 'square'; }
 function safeDomain(u) { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return ''; } }
