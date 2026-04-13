@@ -341,6 +341,10 @@ function appendCards(items) {
     frag.appendChild(card);
   }
   feed.appendChild(frag);
+  // Force sentinel to stay at bottom so scroll triggers
+  requestAnimationFrame(() => {
+    sentinel.scrollIntoView({ behavior: 'auto', block: 'end' });
+  });
 }
 
 function updateBadge(card, id) {
