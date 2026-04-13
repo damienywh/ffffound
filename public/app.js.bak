@@ -19,7 +19,7 @@ const SOURCES = [
   // ~106k photo posts — the spiritual successor to ffffound
   { type: 'tumblr', blog: 'nevver',                  label: 'this isn\'t happiness' },
   // ~50k — fine art, illustration, surrealism
-// REMOVED: cross-connect 404
+  { type: 'tumblr', blog: 'cross-connect',           label: 'cross connect' },
   // ~80k — classical & modern painting
   { type: 'tumblr', blog: 'fer1972',                 label: 'fine art' },
   // ~30k — design, craft, illustration
@@ -27,15 +27,15 @@ const SOURCES = [
   // ~25k — graphic design, typography, branding
   { type: 'tumblr', blog: 'visualgraphc',            label: 'visual graphic' },
   // ~20k — moody photography, dark aesthetic
-// REMOVED: darksilenceinsuburbia 404
+  { type: 'tumblr', blog: 'darksilenceinsuburbia',   label: 'dark silence' },
   // ~15k — architecture & maps
   { type: 'tumblr', blog: 'archimaps',               label: 'archimaps' },
   // ~40k — eclectic art & photography curation
-// REMOVED: likeafieldmouse 404
+  { type: 'tumblr', blog: 'likeafieldmouse',         label: 'like a field mouse' },
   // ~10k — photography & design escape kit
   { type: 'tumblr', blog: 'escapekit',               label: 'escape kit' },
   // ~20k — photography, nature, art
-// REMOVED: foxesinbreeches 404
+  { type: 'tumblr', blog: 'foxesinbreeches',         label: 'foxes in breeches' },
   // ~15k — lensblr photography network
   { type: 'tumblr', blog: 'lensblr-network',         label: 'lensblr' },
   // ~8k — floating memos, design/art
@@ -107,23 +107,6 @@ function updateStatus() {
   updateStatus();
   await fetchNext();
   observeScroll();
-  
-  // Manual load more button
-  const loadMoreBtn = document.getElementById('loadMore');
-  loadMoreBtn.onclick = async () => {
-    loadMoreBtn.classList.add('hidden');
-    await fetchNext();
-  };
-  
-  // Show/hide load more button based on state
-  const origUpdateStatus = updateStatus;
-  window.updateStatus = function() {
-    origUpdateStatus();
-    setTimeout(() => {
-      loadMoreBtn.classList.toggle('hidden', !S.hasMore || S.loading);
-    }, 100);
-  };
-  
   const cfg = window.FFFFOUND_FIREBASE;
   if (cfg?.enabled && cfg?.config?.apiKey) initFB(cfg);
 })();
@@ -131,31 +114,15 @@ function updateStatus() {
 // ── FETCH DISPATCHER — round-robin ───────────────────────────
 async function fetchNext() {
   if (S.loading) return;
-  // Keep fetching from available sources while they return items
-  let fetchedAny = false;
-  do {
-    let attempts = 0;
-    let foundWork = false;
-    while (attempts < sourceState.length) {
-      const src = sourceState[sourceIdx % sourceState.length];
-      sourceIdx++;
-      attempts++;
-      if (!src.done) { 
-        await fetchSource(src);
-        foundWork = true;
-        // If this source returned items, try another one
-        break;
-      }
-    }
-    fetchedAny = foundWork;
-    // Stop if all sources are done
-    if (sourceState.every(s => s.done)) break;
-  } while (fetchedAny && S.hasMore);
-  
-  if (sourceState.every(s => s.done)) {
-    S.hasMore = false;
-    updateStatus();
+  let attempts = 0;
+  while (attempts < sourceState.length) {
+    const src = sourceState[sourceIdx % sourceState.length];
+    sourceIdx++;
+    attempts++;
+    if (!src.done) { await fetchSource(src); return; }
   }
+  S.hasMore = false;
+  updateStatus();
 }
 
 async function fetchSource(src) {

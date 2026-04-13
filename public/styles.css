@@ -114,3 +114,19 @@ body{min-height:100dvh;overflow-x:hidden}
 .toast{position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);font-family:var(--mono);font-size:10px;letter-spacing:.06em;padding:8px 16px;border-radius:20px;z-index:400;pointer-events:none;animation:ti .2s ease,to .3s ease 1.2s forwards}
 @keyframes ti{from{opacity:0;transform:translateX(-50%) translateY(8px)}}
 @keyframes to{to{opacity:0;transform:translateX(-50%) translateY(-4px)}}
+
+#loadMore {
+  display: block;
+  margin: 20px auto;
+  padding: 15px 30px;
+  font-size: 24px;
+  background: transparent;
+  border: 1px solid #ccc;
+  border-radius: 50%;
+  cursor: pointer;
+  opacity: 0.3;
+  transition: opacity 0.2s;
+}
+#loadMore:hover { opacity: 0.7; }
+#loadMore.hidden { display: none; }
+
