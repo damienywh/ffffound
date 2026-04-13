@@ -416,7 +416,7 @@ function observeScroll() {
   new IntersectionObserver(async ([e]) => {
     if (!e.isIntersecting || S.loading) return;
     if (S.hasMore) await fetchNext();
-  }, { rootMargin: '1200px' }).observe(sentinel);
+  }, { rootMargin: '200px' }).observe(sentinel);
 }
 
 // ── VIEWER ───────────────────────────────────────────────────
