@@ -10,14 +10,31 @@
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<nav id="bar"><span class="wm">Caffeine for the Abyss</span><div class="nav"><button id="bFold" title="Collections">⊞</button><button id="bTheme" title="Theme">◐</button></div></nav>
+<nav id="bar"><span class="wm">Caffeine for the Abyss</span><div class="nav"><button id="bInfo" title="About">ⓘ</button><button id="bFold" title="Collections">◫</button><button id="bTheme" title="Theme">◐</button></div></nav>
 <main id="feed"></main>
 <div id="sentinel"></div>
-<button id="loadMore" title="Load more">↻</button>
+<div id="feedEnd" class="off">
+  <button id="loadMore" title="Load more">↓</button>
+  <span id="feedMsg"></span>
+</div>
 <div id="loader"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
-<div id="vw"><div id="vwBg"></div><img id="vwImg" alt=""><div id="vwBar"><button id="vL" class="vb" title="Like (f)">♥</button><button id="vD" class="vb" title="Dislike (x)">×</button><button id="vS" class="vb" title="Save (s)">⊞</button><a id="vO" class="vb" target="_blank" rel="noopener" title="Original (o)">↓</a><button id="vP" class="vb vn" title="Prev">‹</button><button id="vN" class="vb vn" title="Next">›</button></div><div id="vwSt"></div></div>
+<div id="vw"><div id="vwBg"></div><img id="vwImg" alt=""><div id="vwBar"><button id="vL" class="vb" title="Like (f)">♥</button><button id="vD" class="vb" title="Dislike (x)">×</button><button id="vS" class="vb" title="Save (s)">◫</button><a id="vO" class="vb" target="_blank" rel="noopener" title="Original (o)">↓</a><button id="vP" class="vb vn" title="Prev">‹</button><button id="vN" class="vb vn" title="Next">›</button></div><div id="vwSt"></div></div>
 <div id="sm"><div class="mbg"></div><div class="mbox"><div class="mhd"><span>save to collection</span><button id="smX">×</button></div><div id="fl"></div><div class="mnw"><input id="nfi" type="text" placeholder="new collection name" maxlength="40"><button id="nfb">+</button></div></div></div>
 <div id="pn"><div class="pnBg"></div><div class="pnC"><div class="pnH"><span>collections</span><button id="pnX">×</button></div><div class="pnU" id="pnU"></div><div id="pl"></div><div class="pnF"><button id="pnBk" class="off">← back</button><div class="pa"><button id="expB">export</button><label class="fl">import<input type="file" id="impI" accept="application/json" hidden></label></div></div></div></div>
+<div id="about" class="off">
+  <div class="abBg"></div>
+  <div class="abC">
+    <div class="abH"><span>about</span><button id="abX">×</button></div>
+    <div class="abBody">
+      <p>A private visual archive that learns your taste. Like images to surface similar content. Dislike to suppress.</p>
+      <h4>how it works</h4>
+      <p>The algorithm builds a profile from your votes — tokens from titles, domains, aspect ratios — weighted by recency. New images are scored against this profile. Liked content floats up. Disliked content disappears.</p>
+      <h4>sources</h4>
+      <div id="abSources"></div>
+      <div id="abStats"></div>
+    </div>
+  </div>
+</div>
 <script src="firebase-config.js"></script>
 <script src="app.js"></script>
 </body>

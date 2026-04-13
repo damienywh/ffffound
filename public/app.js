@@ -89,101 +89,185 @@ const S = {
 const $ = id => document.getElementById(id);
 const feed = $('feed'), sentinel = $('sentinel'), loader = $('loader');
 
-// ── STATUS BAR ───────────────────────────────────────────────
-function updateStatus() {
-  let el = document.getElementById('statusBar');
-  if (!el) {
-    el = document.createElement('div');
-    el.id = 'statusBar';
-    el.style.cssText = [
-      'position:fixed;bottom:14px;right:16px;z-index:100',
-      'font-size:10px;letter-spacing:.07em;color:var(--muted)',
-      'opacity:0.6;pointer-events:none;text-align:right',
-      'font-family:var(--mono,"SF Mono",ui-monospace,monospace)',
-      'line-height:1.7',
-    ].join(';');
-    document.body.appendChild(el);
+// ── JS MASONRY COLUMNS ──────────────────────────────────────
+// Instead of CSS column-count (which reflows everything on append),
+// we maintain N column divs and always append to the shortest one.
+// Existing cards never move.
+let columns = [];      // array of { el: HTMLElement, h: number }
+let currentColCount = 0;
+
+function getColCount() {
+  const w = window.innerWidth;
+  if (w <= 680) return 2;
+  if (w <= 1000) return 3;
+  if (w <= 1400) return 4;
+  return 5;
+}
+
+function ensureColumns() {
+  const needed = getColCount();
+  if (needed === currentColCount && columns.length === needed) return;
+
+  // If column count changed, redistribute existing cards
+  const existingCards = [];
+  for (const col of columns) {
+    while (col.el.firstChild) {
+      existingCards.push(col.el.removeChild(col.el.firstChild));
+    }
   }
-  const done = sourceState.filter(s => s.done).length;
-  const active = sourceState.filter(s => !s.done && !s.error).map(s => s.label).join(' · ');
-  const endMsg = !S.hasMore && done === sourceState.length 
-    ? '<br><span style="opacity:.4;font-style:italic">...you\'ve reached the bottom of the abyss. Refresh to keep going.</span>' 
-    : '';
-  el.innerHTML =
-    `${S.pool.size.toLocaleString()} images · ${done}/${sourceState.length} sources` +
-    (active ? `<br><span style="opacity:.5">${active}</span>` : '') +
-    endMsg;
+
+  // Clear and recreate columns
+  feed.innerHTML = '';
+  columns = [];
+  currentColCount = needed;
+
+  for (let i = 0; i < needed; i++) {
+    const col = document.createElement('div');
+    col.className = 'masonry-col';
+    feed.appendChild(col);
+    columns.push({ el: col, h: 0 });
+  }
+
+  // Re-append existing cards to shortest columns
+  for (const card of existingCards) {
+    const shortest = columns.reduce((a, b) => a.h <= b.h ? a : b);
+    shortest.el.appendChild(card);
+    // Estimate height from the card's img aspect ratio or use actual
+    shortest.h += card.offsetHeight || 200;
+  }
+}
+
+// Recalculate on resize (debounced)
+let resizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    if (getColCount() !== currentColCount) ensureColumns();
+  }, 250);
+});
+
+// ── STATUS — minimal feed end + about panel ─────────────────
+function updateStatus() {
+  const done = sourceState.filter(s => s.done || s.error).length;
+  const total = sourceState.length;
+  const feedEnd = $('feedEnd');
+  const feedMsg = $('feedMsg');
+  
+  if (S.pool.size > 0) {
+    feedEnd.classList.remove('off');
+    if (!S.hasMore) {
+      feedMsg.textContent = `${S.pool.size.toLocaleString()} images · end of feed`;
+      $('loadMore').style.display = 'none';
+    } else {
+      feedMsg.textContent = `${S.pool.size.toLocaleString()} images`;
+      $('loadMore').style.display = '';
+    }
+  }
+
+  // Update about panel sources if open
+  const abSrc = $('abSources');
+  const abStats = $('abStats');
+  if (abSrc) {
+    abSrc.innerHTML = '';
+    const list = document.createElement('div');
+    list.className = 'src-list';
+    sourceState.forEach(s => {
+      const tag = document.createElement('span');
+      tag.className = 'src-tag' + (s.error ? ' err' : s.done ? '' : ' active');
+      tag.textContent = s.label;
+      list.appendChild(tag);
+    });
+    abSrc.appendChild(list);
+  }
+  if (abStats) {
+    const lc = Object.values(S.ix).filter(v => v.score > 0).length;
+    const dc = Object.values(S.ix).filter(v => v.score < 0).length;
+    abStats.textContent = `${lc} liked · ${dc} hidden · ${done}/${total} sources loaded`;
+  }
+}
+
+function openAbout() {
+  $('about').classList.remove('off');
+  updateStatus();
+}
+function closeAbout() {
+  $('about').classList.add('off');
 }
 
 // ── INIT ─────────────────────────────────────────────────────
 (async () => {
   applyTheme();
   bind();
+  ensureColumns();
+
+  // Random start page for Are.na — skip into the archive instead of always page 1
+  const arenaSrc = sourceState.find(s => s.type === 'arena');
+  if (arenaSrc) {
+    const startPage = 1 + Math.floor(Math.random() * 80);
+    arenaSrc.page = startPage;
+    arenaSrc._startPage = startPage;
+    arenaSrc._wrapped = false;
+  }
+
   updateStatus();
-  await fetchNext();
+
+  // Fast first paint: load Are.na first (reliable, fast)
+  if (arenaSrc && !arenaSrc.done) {
+    await fetchSource(arenaSrc);
+  }
+
   observeScroll();
-  
-  // Manual load more button
-  const loadMoreBtn = document.getElementById('loadMore');
-  loadMoreBtn.onclick = async () => {
-    loadMoreBtn.classList.add('hidden');
-    await fetchNext();
-  };
-  
-  // Show/hide load more button based on state
-  const origUpdateStatus = updateStatus;
-  window.updateStatus = function() {
-    origUpdateStatus();
-    setTimeout(() => {
-      loadMoreBtn.classList.toggle('hidden', !S.hasMore || S.loading);
-    }, 100);
-  };
-  
+
+  // Lazy-load Tumblr sources after first paint
+  setTimeout(() => {
+    fetchNext();
+  }, 800);
+
   const cfg = window.FFFFOUND_FIREBASE;
   if (cfg?.enabled && cfg?.config?.apiKey) initFB(cfg);
 })();
 
-// ── FETCH DISPATCHER — round-robin ───────────────────────────
+// ── FETCH DISPATCHER — keep trying until images found ────────
 async function fetchNext() {
   if (S.loading) return;
-  // Keep fetching from available sources while they return items
-  let fetchedAny = false;
-  do {
-    let attempts = 0;
-    let foundWork = false;
-    while (attempts < sourceState.length) {
-      const src = sourceState[sourceIdx % sourceState.length];
-      sourceIdx++;
-      attempts++;
-      if (!src.done) { 
-        await fetchSource(src);
-        foundWork = true;
-        // If this source returned items, try another one
-        break;
+
+  const poolBefore = S.pool.size;
+  let attempts = 0;
+
+  // Keep trying sources round-robin until we get new images or exhaust all
+  while (attempts < sourceState.length) {
+    const src = sourceState[sourceIdx % sourceState.length];
+    sourceIdx++;
+    attempts++;
+    if (!src.done && !src.error) {
+      await fetchSource(src);
+      // If we got new images, stop and let the user scroll
+      if (S.pool.size > poolBefore) {
+        updateStatus();
+        return;
       }
+      // Otherwise try next source immediately
     }
-    fetchedAny = foundWork;
-    // Stop if all sources are done
-    if (sourceState.every(s => s.done)) break;
-  } while (fetchedAny && S.hasMore);
-  
-  if (sourceState.every(s => s.done)) {
-    S.hasMore = false;
-    updateStatus();
   }
+
+  // All sources exhausted
+  S.hasMore = false;
+  updateStatus();
 }
 
 async function fetchSource(src) {
+  if (src.done || src.error) return;
   S.loading = true;
   loader.classList.remove('off');
   try {
     let items = [];
     if (src.type === 'arena')  items = await fetchArena(src);
     if (src.type === 'tumblr') items = await fetchTumblr(src);
-    if (items.length > 0) {
+    if (items && items.length > 0) {
       const profile = buildProfile();
       const batch = [];
       for (const item of items) {
+        if (!item || !item.id || !item.thumb) continue; // skip malformed
         if (S.pool.has(item.id)) continue;
         S.pool.set(item.id, item);
         const ix = S.ix[item.id];
@@ -191,19 +275,21 @@ async function fetchSource(src) {
         item._score = scoreItem(item, profile);
         batch.push(item);
       }
-      batch.sort((a, b) => b._score - a._score);
-      appendCards(batch);
+      if (batch.length) {
+        batch.sort((a, b) => b._score - a._score);
+        appendCards(batch);
+      }
     }
-    updateStatus();
   } catch (err) {
-    console.warn(`[${src.label}] fetch error`, err);
+    const msg = err?.message || String(err || 'unknown error');
+    console.warn(`[${src.label}] skipped: ${msg}`);
     src.error = true;
-    // Don't permanently mark done — will retry on next scroll
+    src.done = true;
   } finally {
     S.loading = false;
     loader.classList.add('off');
   }
-  if (sourceState.every(s => s.done)) S.hasMore = false;
+  if (sourceState.every(s => s.done || s.error)) S.hasMore = false;
 }
 
 // ── ARE.NA ADAPTER ───────────────────────────────────────────
@@ -216,7 +302,7 @@ async function fetchArena(src) {
         const infoJson = await infoRes.json();
         const realLength = infoJson.length || 0;
         src.totalPages = realLength > 0 ? Math.ceil(realLength / 100) : 99;
-        console.log(`[Are.na:${src.slug}] ${realLength} items, ${src.totalPages} pages`);
+        // (logged)
       } else {
         src.totalPages = 99; // fallback
       }
@@ -232,9 +318,18 @@ async function fetchArena(src) {
 
   const raw = (json.contents || json.data || []).filter(x => x.image);
   if (raw.length === 0 || src.page > src.totalPages) {
+    // If we started from a random page, wrap around to page 1
+    if (!src._wrapped && src._startPage > 1) {
+      src.page = 1;
+      src._wrapped = true;
+      return fetchArena(src); // retry from page 1
+    }
     src.done = true;
-    console.log(`[Are.na:${src.slug}] complete at page ${src.page}`);
     return [];
+  }
+  // Stop if we've wrapped around and reached our start point
+  if (src._wrapped && src.page >= src._startPage) {
+    src.done = true;
   }
   src.page++;
 
@@ -258,40 +353,39 @@ async function fetchArena(src) {
 // ── TUMBLR ADAPTER ───────────────────────────────────────────
 async function fetchTumblr(src) {
   if (!TUMBLR_KEY) {
-    console.warn('[Tumblr] No key configured — set window.FFFFOUND_CONFIG.tumblrKey');
     src.done = true;
     return [];
   }
 
-  const url = `https://api.tumblr.com/v2/blog/${src.blog}.tumblr.com/posts/photo` +
-    `?api_key=${TUMBLR_KEY}&limit=20&offset=${src.offset}&npf=false`;
-  const res = await fetch(url);
-
-  if (res.status === 404) {
-    console.warn(`[Tumblr:${src.blog}] 404 — blog not found or moved, skipping`);
-    src.done = true; return [];
+  let res;
+  try {
+    const url = `https://api.tumblr.com/v2/blog/${src.blog}.tumblr.com/posts/photo` +
+      `?api_key=${TUMBLR_KEY}&limit=20&offset=${src.offset}&npf=false`;
+    res = await fetch(url);
+  } catch (e) {
+    src.error = true; src.done = true;
+    return [];
   }
-  if (res.status === 401 || res.status === 403) {
-    console.warn(`[Tumblr:${src.blog}] auth error ${res.status}, skipping`);
-    src.done = true; return [];
-  }
-  if (!res.ok) throw new Error(`Tumblr ${res.status}`);
 
-  const json = await res.json();
-  const resp = json.response || {};
+  if (res.status === 404 || res.status === 401 || res.status === 403 || !res.ok) {
+    src.error = true; src.done = true;
+    return [];
+  }
+
+  let json;
+  try { json = await res.json(); } catch { src.done = true; return []; }
+  const resp = json?.response || {};
 
   if (src.totalPages === null) {
     const total = resp.total_posts || resp.blog?.total_posts || 0;
-    src.totalPages = Math.ceil(total / 20);
-    console.log(`[Tumblr:${src.blog}] ~${total} photo posts, ${src.totalPages} pages`);
+    src.totalPages = Math.ceil(total / 20) || 0;
   }
 
   const posts = resp.posts || [];
   if (posts.length === 0) { src.done = true; return []; }
 
   src.offset += 20;
-  // Tumblr API won't return beyond offset 20000 (their hard cap)
-  if (src.offset >= Math.min(src.totalPages * 20, 20000)) src.done = true;
+  if (src.offset >= Math.min((src.totalPages || 0) * 20, 20000)) src.done = true;
 
   const items = [];
   for (const post of posts) {
@@ -360,18 +454,38 @@ function hashId(id) {
   return Math.abs(h);
 }
 
-// ── RENDER ───────────────────────────────────────────────────
+// ── RENDER — append to shortest column ──────────────────────
 function appendCards(items) {
-  const frag = document.createDocumentFragment();
+  ensureColumns(); // make sure columns exist
+
   for (const item of items) {
     if (S.rendered.has(item.id)) continue;
+    if (!item.thumb) continue; // skip items with no image URL
     S.rendered.add(item.id);
     const card = document.createElement('div');
     card.className = 'c'; card.dataset.id = item.id;
     const img = document.createElement('img');
     img.loading = 'lazy'; img.src = item.thumb; img.alt = '';
-    img.onload = () => img.classList.add('ok');
-    img.onerror = () => card.remove();
+    img.onload = () => {
+      img.classList.add('ok');
+      // Update column height tracking after image loads
+      const col = card.closest('.masonry-col');
+      if (col) {
+        const idx = columns.findIndex(c => c.el === col);
+        if (idx >= 0) columns[idx].h = col.scrollHeight;
+      }
+    };
+    img.onerror = () => {
+      // Update column height before removing
+      const col = card.closest('.masonry-col');
+      if (col) {
+        const idx = columns.findIndex(c => c.el === col);
+        if (idx >= 0) columns[idx].h = Math.max(0, columns[idx].h - (card.offsetHeight || 200));
+      }
+      card.remove();
+      S.rendered.delete(item.id);
+      S.pool.delete(item.id);
+    };
     const overlay = document.createElement('div'); overlay.className = 'ho';
     const bLike = document.createElement('button');
     bLike.textContent = '♥'; bLike.title = 'Like';
@@ -386,9 +500,13 @@ function appendCards(items) {
     updateBadge(card, item.id);
     card.appendChild(img); card.appendChild(overlay);
     card.onclick = () => openViewer(item);
-    frag.appendChild(card);
+
+    // Place in shortest column — estimated height from aspect ratio
+    const estH = (item.h / item.w) * (feed.offsetWidth / currentColCount) || 200;
+    const shortest = columns.reduce((a, b) => a.h <= b.h ? a : b);
+    shortest.el.appendChild(card);
+    shortest.h += estH;
   }
-  feed.appendChild(frag);
 }
 
 function updateBadge(card, id) {
@@ -410,28 +528,26 @@ function quickVote(item, val, card) {
   const ol = card.querySelector('.ho');
   if (ol) { const b = ol.querySelectorAll('button'); b[0].classList.toggle('hl', ix.score > 0); b[1].classList.toggle('hd', ix.score < 0); }
   if (val > 0) toast('liked');
-  else if (val < 0) { toast('hidden from feed'); card.classList.add('killed'); }
+  else if (val < 0) { toast('hidden'); card.classList.add('killed'); }
   else toast('vote cleared');
   syncPush(item.id);
 }
 
 // ── SCROLL ───────────────────────────────────────────────────
 function observeScroll() {
-  let scrollTimeout;
-  const checkAndFetch = async () => {
-    if (S.loading || !S.hasMore) return;
-    const sentinel = document.getElementById('sentinel');
-    if (!sentinel) return;
-    const rect = sentinel.getBoundingClientRect();
-    // Only trigger when sentinel is visible and within 100px of viewport bottom
-    if (rect.top <= window.innerHeight && rect.top >= window.innerHeight - 100) {
-      await fetchNext();
+  let fetching = false;
+  const observer = new IntersectionObserver(async ([entry]) => {
+    if (!entry.isIntersecting || fetching || !S.hasMore) return;
+    fetching = true;
+    await fetchNext();
+    fetching = false;
+    // If sentinel is still visible after fetch (no new content pushed it down),
+    // try again after a short delay
+    if (S.hasMore && entry.isIntersecting) {
+      setTimeout(() => observer.unobserve(sentinel) || observer.observe(sentinel), 300);
     }
-  };
-  window.addEventListener('scroll', () => {
-    clearTimeout(scrollTimeout);
-    scrollTimeout = setTimeout(checkAndFetch, 500);
-  }, { passive: true });
+  }, { rootMargin: '800px' });
+  observer.observe(sentinel);
 }
 
 // ── VIEWER ───────────────────────────────────────────────────
@@ -469,7 +585,7 @@ function voteV(val) {
     if (ix.score < -1) card.classList.add('killed');
   }
   if (val > 0) toast('liked');
-  else if (val < 0) { toast('hidden from feed'); setTimeout(() => navV(1), 200); }
+  else if (val < 0) { toast('hidden'); setTimeout(() => navV(1), 200); }
   else toast('vote cleared');
   syncPush(item.id);
 }
@@ -526,8 +642,7 @@ function renderPL() {
   const dc = Object.values(S.ix).filter(v => v.score < 0).length;
   const st = document.createElement('div');
   st.style.cssText = 'padding:12px 16px;font-size:10px;color:var(--muted);letter-spacing:.08em;border-bottom:1px solid var(--line)';
-  const srcLines = sourceState.map(s => `${s.done ? '✓' : s.error ? '!' : '…'} ${s.label}`).join('  ');
-  st.innerHTML = `${lc} liked · ${dc} hidden · ${S.pool.size.toLocaleString()} loaded<br><span style="opacity:.55;font-size:9px">${srcLines}</span>`;
+  st.textContent = `${lc} liked · ${dc} hidden · ${S.pool.size.toLocaleString()} loaded`;
   pl.appendChild(st);
   if (lc > 0) { const d = document.createElement('div'); d.className = 'pf'; d.innerHTML = `<span>♥ all liked</span><span class="fc">${lc}</span>`; d.onclick = () => { pMode = 'folder'; pFolder = '__liked__'; renderPN(); }; pl.appendChild(d); }
   const names = Object.keys(S.fo).sort();
@@ -564,6 +679,9 @@ function renderPF() {
 function bind() {
   $('bTheme').onclick = () => { S.cfg.theme = S.cfg.theme === 'dark' ? 'light' : 'dark'; sv(K.st, S.cfg); applyTheme(); };
   $('bFold').onclick = openPN;
+  $('bInfo').onclick = openAbout;
+  $('abX').onclick = closeAbout;
+  document.querySelector('.abBg').onclick = closeAbout;
   $('pnX').onclick = closePN;
   $('pnBk').onclick = () => { pMode = 'list'; pFolder = null; renderPN(); };
   document.querySelector('.pnBg').onclick = closePN;
@@ -579,6 +697,14 @@ function bind() {
   $('vN').onclick = () => navV(1);
   $('expB').onclick = exportP;
   $('impI').onchange = importP;
+  $('loadMore').onclick = async () => {
+    // Try up to 3 rounds if first attempt gets no images
+    for (let i = 0; i < 3 && S.hasMore; i++) {
+      const before = S.pool.size;
+      await fetchNext();
+      if (S.pool.size > before) break; // got images, stop
+    }
+  };
   document.addEventListener('keydown', e => {
     if (S.vOpen) {
       if (e.key === 'Escape') closeViewer();
@@ -592,6 +718,7 @@ function bind() {
     }
     if ($('sm').classList.contains('on')) { if (e.key === 'Escape') closeSM(); return; }
     if ($('pn').classList.contains('on')) { if (e.key === 'Escape') closePN(); return; }
+    if (!$('about').classList.contains('off')) { if (e.key === 'Escape') closeAbout(); return; }
   });
   let tx = 0;
   $('vw').addEventListener('touchstart', e => { tx = e.touches[0].clientX; }, { passive: true });
