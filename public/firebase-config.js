@@ -8,8 +8,5 @@ window.FFFFOUND_FIREBASE = {
     messagingSenderId: '95928715950',
     appId: '1:95928715950:web:4a05bab27eb0b39327fb3f'
   },
-  providers: {
-    google: true,
-    facebook: false
-  }
+  providers: { google: true }
 };
