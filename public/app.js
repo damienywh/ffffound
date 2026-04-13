@@ -106,9 +106,13 @@ function updateStatus() {
   }
   const done = sourceState.filter(s => s.done).length;
   const active = sourceState.filter(s => !s.done && !s.error).map(s => s.label).join(' · ');
+  const endMsg = !S.hasMore && done === sourceState.length 
+    ? '<br><span style="opacity:.4;font-style:italic">...you\'ve reached the bottom of the abyss. Refresh to keep going.</span>' 
+    : '';
   el.innerHTML =
     `${S.pool.size.toLocaleString()} images · ${done}/${sourceState.length} sources` +
-    (active ? `<br><span style="opacity:.5">${active}</span>` : '');
+    (active ? `<br><span style="opacity:.5">${active}</span>` : '') +
+    endMsg;
 }
 
 // ── INIT ─────────────────────────────────────────────────────
