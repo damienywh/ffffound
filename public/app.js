@@ -1,112 +1,235 @@
 // ════════════════════════════════════════════════════════════
-// FFFFOUND ARCHIVE — v6
-// Append-only masonry · taste engine · infinite scroll
+// FFFFOUND ARCHIVE — v8
+// Multi-source · Are.na + Tumblr · taste engine · infinite scroll
 // ════════════════════════════════════════════════════════════
 
-const SLUG = 'ffffound-archive';
-const PER = 100; // max allowed by Are.na
-const MAX_PAGES = 2000; // estimated ~200k items / 100 per page
+// ── CONFIG — edit these ──────────────────────────────────────
+// Replace with your new Tumblr consumer key (read-only, safe in frontend)
+const TUMBLR_KEY = window.FFFFOUND_CONFIG?.tumblrKey || 'YOUR_TUMBLR_CONSUMER_KEY';
+
+// Sources: each entry is { type, id/slug, label }
+// Add/remove sources here — the engine handles the rest
+const SOURCES = [
+  // Are.na channels
+  { type: 'arena',  slug: 'ffffound-archive',          label: 'ffffound archive' },
+
+  // Tumblr blogs — high-quality image curators, ffffound-adjacent aesthetic
+  { type: 'tumblr', blog: 'nevver',                    label: 'this isn\'t happiness' },
+  { type: 'tumblr', blog: 'baubauhaus',                label: 'baubauhaus' },
+  { type: 'tumblr', blog: 'ilovecreativephotography',  label: 'i love creative photography' },
+  { type: 'tumblr', blog: 'itscolossal',               label: 'colossal' },
+  { type: 'tumblr', blog: 'cross-connect',             label: 'cross connect' },
+  { type: 'tumblr', blog: 'sosuperawesome',            label: 'so super awesome' },
+  { type: 'tumblr', blog: 'fer1972',                   label: 'classical art' },
+  { type: 'tumblr', blog: 'escapekit',                 label: 'escape kit' },
+  { type: 'tumblr', blog: 'asylum-art',                label: 'asylum art' },
+];
+// ────────────────────────────────────────────────────────────
+
 const DECAY = 0.92;
 const STOP = new Set('the and for with from this that into your their have been just only also very about some over more than were then when what will would could there them they like image photo untitled www http https jpeg png jpg gif webp block attachment upload source none null undefined'.split(' '));
-const K = { ix: 'ff6-ix', fo: 'ff6-fo', st: 'ff6-st' };
+const K = { ix: 'ff8-ix', fo: 'ff8-fo', st: 'ff8-st' };
 
-// ── STATE ──
+// ── SOURCE STATE ──
+// Each source tracks its own cursor independently
+const sourceState = SOURCES.map(src => ({
+  ...src,
+  page: 1,       // Are.na page / Tumblr offset ÷ 20
+  offset: 0,     // Tumblr offset
+  done: false,
+  totalPages: null,
+}));
+let sourceIdx = 0; // round-robin pointer
+
+// ── APP STATE ──
 const S = {
-  pool: new Map(),       // id → item (all loaded items)
-  rendered: new Set(),   // ids already in DOM
-  page: 0,              // current page being fetched
+  pool: new Map(),
+  rendered: new Set(),
   loading: false,
   hasMore: true,
-  ix: ld(K.ix, {}),     // interactions: { [id]: { score, seen, ts } }
-  fo: ld(K.fo, {}),     // folders: { [name]: [id...] }
+  ix: ld(K.ix, {}),
+  fo: ld(K.fo, {}),
   cfg: ld(K.st, { theme: 'light' }),
-  vOpen: false, vIdx: -1, vList: [], // viewer state
+  vOpen: false, vIdx: -1, vList: [],
   fb: { enabled: false, auth: null, db: null, user: null }
 };
 
 const $ = id => document.getElementById(id);
 const feed = $('feed'), sentinel = $('sentinel'), loader = $('loader');
 
+// ── STATUS BAR ──
+function updateStatus() {
+  let el = document.getElementById('statusBar');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'statusBar';
+    el.style.cssText = [
+      'position:fixed;bottom:14px;right:16px;z-index:100',
+      'font-size:10px;letter-spacing:.07em;color:var(--muted)',
+      'opacity:0.65;pointer-events:none;text-align:right',
+      'font-family:var(--mono,"SF Mono",monospace)',
+      'line-height:1.6'
+    ].join(';');
+    document.body.appendChild(el);
+  }
+  const active = sourceState.filter(s => !s.done).map(s => s.label).join(', ');
+  const done = sourceState.filter(s => s.done).length;
+  el.innerHTML = `${S.pool.size.toLocaleString()} images<br>${done}/${sourceState.length} sources complete`;
+}
+
 // ── INIT ──
 (async () => {
   applyTheme();
   bind();
-
-  // Random start page for variety on each visit
-  S.page = 1 + Math.floor(Math.random() * Math.min(MAX_PAGES, 1500));
-
-  await fetchPage();
+  updateStatus();
+  await fetchNext();
   observeScroll();
-
-  // Try Firebase if configured
   const cfg = window.FFFFOUND_FIREBASE;
   if (cfg?.enabled && cfg?.config?.apiKey) initFB(cfg);
 })();
 
-// ── ARE.NA FETCH — APPEND ONLY ──
-async function fetchPage() {
-  if (S.loading || !S.hasMore) return;
+// ── FETCH DISPATCHER — round-robin across sources ──
+async function fetchNext() {
+  if (S.loading) return;
+
+  // Find next non-done source (round-robin)
+  let attempts = 0;
+  while (attempts < sourceState.length) {
+    const src = sourceState[sourceIdx % sourceState.length];
+    sourceIdx++;
+    attempts++;
+    if (!src.done) {
+      await fetchSource(src);
+      return;
+    }
+  }
+  // All sources exhausted
+  S.hasMore = false;
+  updateStatus();
+}
+
+async function fetchSource(src) {
   S.loading = true;
   loader.classList.remove('off');
-
   try {
-    // Try v2 first (widely supported), fall back to demo
-    const url = `https://api.are.na/v2/channels/${SLUG}/contents?page=${S.page}&per=${PER}`;
-    const res = await fetch(url, { headers: { Accept: 'application/json' } });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const json = await res.json();
-
-    const raw = (json.contents || json.data || []).filter(x => x.image);
-    if (raw.length === 0) {
-      // Might have hit empty page in the middle — try wrapping around
-      if (S.page > 1) { S.page = 1; S.loading = false; loader.classList.add('off'); await fetchPage(); return; }
-      S.hasMore = false;
-    } else {
+    let items = [];
+    if (src.type === 'arena')  items = await fetchArena(src);
+    if (src.type === 'tumblr') items = await fetchTumblr(src);
+    if (items.length > 0) {
       const profile = buildProfile();
       const batch = [];
-      for (const r of raw) {
-        const item = normalize(r);
-        if (S.pool.has(item.id)) continue; // skip dupes
+      for (const item of items) {
+        if (S.pool.has(item.id)) continue;
         S.pool.set(item.id, item);
-        // Skip items the user has strongly disliked
         const ix = S.ix[item.id];
         if (ix && ix.score < -1) continue;
         item._score = scoreItem(item, profile);
         batch.push(item);
       }
-      // Sort batch by score, then append
       batch.sort((a, b) => b._score - a._score);
       appendCards(batch);
-      S.page++;
-      // Check pagination meta
-      const meta = json.meta || json;
-      if (meta.has_more_pages === false || meta.current_page >= meta.total_pages) {
-        // wrap around to page 1 if we started from a random page
-        if (S.page > 2) { S.page = 1; }
-        else S.hasMore = false;
-      }
     }
+    updateStatus();
   } catch (err) {
-    console.warn('Are.na unavailable, loading demo images', err);
-    loadDemo();
+    console.warn(`[${src.label}] fetch failed`, err);
+    // Don't mark done on transient errors — will retry next round
   } finally {
     S.loading = false;
     loader.classList.add('off');
   }
+  // Re-check if anything left
+  if (sourceState.every(s => s.done)) S.hasMore = false;
 }
 
-function normalize(r) {
-  const img = r.image || {};
-  return {
-    id: String(r.id),
-    thumb: img.display?.url || img.thumb?.url || img.original?.url || '',
-    full: img.original?.url || img.display?.url || '',
-    title: r.title || r.generated_title || '',
-    desc: r.description || r.content || '',
-    domain: safeDomain(r.source?.url || ''),
-    w: img.original?.width || img.display?.width || 1000,
-    h: img.original?.height || img.display?.height || 1000,
-  };
+// ── ARE.NA ADAPTER ──
+async function fetchArena(src) {
+  const url = `https://api.are.na/v2/channels/${src.slug}/contents?page=${src.page}&per=100`;
+  const res = await fetch(url, { headers: { Accept: 'application/json' } });
+  if (!res.ok) throw new Error(`Are.na HTTP ${res.status}`);
+  const json = await res.json();
+
+  const meta = json.meta || json;
+  if (src.totalPages === null) {
+    src.totalPages = meta.total_pages || Math.ceil((meta.length || 0) / 100) || 999;
+    console.log(`[Are.na:${src.slug}] ${src.totalPages} pages`);
+  }
+
+  const raw = (json.contents || json.data || []).filter(x => x.image);
+  if (raw.length === 0 || src.page >= src.totalPages) {
+    src.done = true;
+    console.log(`[Are.na:${src.slug}] complete`);
+    return [];
+  }
+  src.page++;
+  return raw.map(r => {
+    const img = r.image || {};
+    return {
+      id: `arena-${r.id}`,
+      thumb: img.display?.url || img.thumb?.url || img.original?.url || '',
+      full:  img.original?.url || img.display?.url || '',
+      title: r.title || r.generated_title || '',
+      desc:  r.description || r.content || '',
+      domain: safeDomain(r.source?.url || ''),
+      w: img.original?.width  || img.display?.width  || 1000,
+      h: img.original?.height || img.display?.height || 1000,
+      source: src.label,
+    };
+  });
+}
+
+// ── TUMBLR ADAPTER ──
+async function fetchTumblr(src) {
+  if (TUMBLR_KEY === 'YOUR_TUMBLR_CONSUMER_KEY') {
+    console.warn('Tumblr key not configured — skipping', src.blog);
+    src.done = true;
+    return [];
+  }
+  const url = `https://api.tumblr.com/v2/blog/${src.blog}.tumblr.com/posts/photo?api_key=${TUMBLR_KEY}&limit=20&offset=${src.offset}&npf=false`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    if (res.status === 404 || res.status === 401) { src.done = true; return []; }
+    throw new Error(`Tumblr HTTP ${res.status}`);
+  }
+  const json = await res.json();
+  const resp = json.response || {};
+
+  if (src.totalPages === null) {
+    const total = resp.total_posts || resp.blog?.total_posts || 0;
+    src.totalPages = Math.ceil(total / 20);
+    console.log(`[Tumblr:${src.blog}] ~${total} photo posts, ${src.totalPages} pages`);
+  }
+
+  const posts = resp.posts || [];
+  if (posts.length === 0) { src.done = true; return []; }
+  src.offset += 20;
+  if (src.offset >= (src.totalPages * 20)) src.done = true;
+
+  const items = [];
+  for (const post of posts) {
+    // Each Tumblr photo post can have multiple photos
+    const photos = post.photos || [];
+    if (!photos.length) continue;
+    photos.forEach((photo, i) => {
+      const sizes = photo.alt_sizes || [];
+      // Pick best size ≤1280px wide, fallback to original
+      const best = sizes.find(s => s.width <= 1280) || sizes[0] || {};
+      const orig = sizes[sizes.length - 1] || {}; // largest
+      if (!best.url) return;
+      items.push({
+        id: `tumblr-${post.id}-${i}`,
+        thumb: best.url,
+        full:  orig.url || best.url,
+        title: post.summary || post.caption?.replace(/<[^>]*>/g, '').slice(0, 80) || '',
+        desc:  post.caption?.replace(/<[^>]*>/g, '').slice(0, 200) || '',
+        domain: safeDomain(post.post_url || ''),
+        w: best.width  || 800,
+        h: best.height || 600,
+        source: src.label,
+        tags: post.tags || [],
+      });
+    });
+  }
+  return items;
 }
 
 // ── SCORING ──
@@ -117,7 +240,7 @@ function buildProfile() {
     const item = S.pool.get(id);
     if (!item) return;
     const w = v.score * Math.pow(DECAY, i);
-    for (const t of tok(`${item.title} ${item.desc} ${item.domain}`)) tw[t] = (tw[t] || 0) + w;
+    for (const t of tok(`${item.title} ${item.desc} ${item.domain} ${(item.tags||[]).join(' ')}`)) tw[t] = (tw[t] || 0) + w;
     if (item.domain) dw[item.domain] = (dw[item.domain] || 0) + w;
     const a = aspect(item);
     aw[a] = (aw[a] || 0) + w;
@@ -127,18 +250,16 @@ function buildProfile() {
 
 function scoreItem(item, profile) {
   let s = 0;
-  for (const t of tok(`${item.title} ${item.desc} ${item.domain}`)) s += (profile.tw[t] || 0) * 2.5;
+  for (const t of tok(`${item.title} ${item.desc} ${item.domain} ${(item.tags||[]).join(' ')}`)) s += (profile.tw[t] || 0) * 2.5;
   s += (profile.dw[item.domain] || 0) * 3;
   s += (profile.aw[aspect(item)] || 0) * 3;
   const ix = S.ix[item.id];
   if (ix) s += ix.score * 40;
   if (!ix || !ix.seen) s += 8;
-  // Deterministic noise per item (stable across re-renders)
   s += (hashId(item.id) % 100) / 20;
   return s;
 }
 
-// Simple string hash for stable per-item noise
 function hashId(id) { let h = 0; for (let i = 0; i < id.length; i++) h = ((h << 5) - h + id.charCodeAt(i)) | 0; return Math.abs(h); }
 
 // ── RENDER — APPEND ONLY ──
@@ -159,28 +280,22 @@ function appendCards(items) {
     img.onload = () => img.classList.add('ok');
     img.onerror = () => card.remove();
 
-    // Hover overlay with like/dislike
     const overlay = document.createElement('div');
     overlay.className = 'ho';
     const bLike = document.createElement('button');
-    bLike.textContent = '♥';
-    bLike.title = 'Like';
+    bLike.textContent = '♥'; bLike.title = 'Like';
     bLike.onclick = e => { e.stopPropagation(); quickVote(item, 1, card); };
     const bDis = document.createElement('button');
-    bDis.textContent = '×';
-    bDis.title = 'Hide';
+    bDis.textContent = '×'; bDis.title = 'Hide';
     bDis.onclick = e => { e.stopPropagation(); quickVote(item, -1, card); };
     overlay.appendChild(bLike);
     overlay.appendChild(bDis);
 
-    // Update overlay button states
     const ix = S.ix[item.id];
     if (ix && ix.score > 0) bLike.classList.add('hl');
     if (ix && ix.score < 0) bDis.classList.add('hd');
 
-    // Badge
     updateBadge(card, item.id);
-
     card.appendChild(img);
     card.appendChild(overlay);
     card.onclick = () => openViewer(item);
@@ -194,40 +309,24 @@ function updateBadge(card, id) {
   const ix = S.ix[id];
   if (ix && ix.score > 0) {
     if (!badge) { badge = document.createElement('span'); card.appendChild(badge); }
-    badge.className = 'badge bl';
-    badge.textContent = '♥';
-  } else if (ix && ix.score < 0) {
-    if (badge) badge.remove();
-  } else {
-    if (badge) badge.remove();
-  }
+    badge.className = 'badge bl'; badge.textContent = '♥';
+  } else { if (badge) badge.remove(); }
 }
 
-// ── QUICK VOTE (from hover) ──
+// ── QUICK VOTE ──
 function quickVote(item, val, card) {
   const ix = S.ix[item.id] || { score: 0, seen: true, ts: Date.now() };
-  if (ix.score === val) ix.score = 0; // toggle off
+  if (ix.score === val) ix.score = 0;
   else ix.score = clamp(ix.score + val, -3, 5);
-  ix.seen = true;
-  ix.ts = Date.now();
+  ix.seen = true; ix.ts = Date.now();
   S.ix[item.id] = ix;
   sv(K.ix, S.ix);
-
-  // Update card visually in-place
   updateBadge(card, item.id);
   const ol = card.querySelector('.ho');
-  if (ol) {
-    const btns = ol.querySelectorAll('button');
-    btns[0].classList.toggle('hl', ix.score > 0);
-    btns[1].classList.toggle('hd', ix.score < 0);
-  }
-
+  if (ol) { const btns = ol.querySelectorAll('button'); btns[0].classList.toggle('hl', ix.score > 0); btns[1].classList.toggle('hd', ix.score < 0); }
   if (val > 0) toast('liked');
-  else if (val < 0) {
-    toast('hidden from feed');
-    card.classList.add('killed'); // hide from grid
-  } else toast('vote cleared');
-
+  else if (val < 0) { toast('hidden from feed'); card.classList.add('killed'); }
+  else toast('vote cleared');
   syncPush(item.id);
 }
 
@@ -235,21 +334,16 @@ function quickVote(item, val, card) {
 function observeScroll() {
   new IntersectionObserver(async ([e]) => {
     if (!e.isIntersecting || S.loading) return;
-    if (S.hasMore) await fetchPage();
+    if (S.hasMore) await fetchNext();
   }, { rootMargin: '1200px' }).observe(sentinel);
 }
 
 // ── VIEWER ──
 function openViewer(item) {
-  // Build viewer list from all rendered items that aren't killed
-  S.vList = [...S.pool.values()].filter(i => {
-    const ix = S.ix[i.id];
-    return !(ix && ix.score < -1);
-  });
+  S.vList = [...S.pool.values()].filter(i => { const ix = S.ix[i.id]; return !(ix && ix.score < -1); });
   S.vIdx = S.vList.findIndex(i => i.id === item.id);
   if (S.vIdx < 0) S.vIdx = 0;
-  S.vOpen = true;
-  showV();
+  S.vOpen = true; showV();
   $('vw').classList.add('on');
   document.body.style.overflow = 'hidden';
   markSeen(item.id);
@@ -273,35 +367,24 @@ function voteV(val) {
   if (ix.score === val) ix.score = 0;
   else ix.score = clamp(ix.score + val, -3, 5);
   ix.seen = true; ix.ts = Date.now();
-  S.ix[item.id] = ix;
-  sv(K.ix, S.ix);
-  showV();
-
-  // Update the card in the grid too
+  S.ix[item.id] = ix; sv(K.ix, S.ix); showV();
   const card = feed.querySelector(`[data-id="${item.id}"]`);
   if (card) {
     updateBadge(card, item.id);
     const ol = card.querySelector('.ho');
-    if (ol) {
-      const btns = ol.querySelectorAll('button');
-      btns[0].classList.toggle('hl', ix.score > 0);
-      btns[1].classList.toggle('hd', ix.score < 0);
-    }
+    if (ol) { const btns = ol.querySelectorAll('button'); btns[0].classList.toggle('hl', ix.score > 0); btns[1].classList.toggle('hd', ix.score < 0); }
     if (ix.score < -1) card.classList.add('killed');
   }
-
   if (val > 0) toast('liked');
   else if (val < 0) { toast('hidden from feed'); setTimeout(() => navV(1), 200); }
   else toast('vote cleared');
-
   syncPush(item.id);
 }
 
 function markSeen(id) {
   const ix = S.ix[id] || { score: 0, ts: Date.now() };
   ix.seen = true; if (!ix.ts) ix.ts = Date.now();
-  S.ix[id] = ix;
-  sv(K.ix, S.ix);
+  S.ix[id] = ix; sv(K.ix, S.ix);
 }
 
 // ── SAVE / FOLDERS ──
@@ -329,7 +412,7 @@ function createF() {
 function toggleInF(fn, iid) {
   const ids = S.fo[fn] || [];
   const i = ids.indexOf(iid);
-  if (i >= 0) { ids.splice(i, 1); toast(`removed`); } else { ids.push(iid); toast(`saved to "${fn}"`); }
+  if (i >= 0) { ids.splice(i, 1); toast('removed'); } else { ids.push(iid); toast(`saved to "${fn}"`); }
   S.fo[fn] = ids; sv(K.fo, S.fo);
 }
 
@@ -339,14 +422,12 @@ function openPN() { $('pn').classList.add('on'); pMode = 'list'; pFolder = null;
 function closePN() { $('pn').classList.remove('on'); }
 function renderPN() {
   $('pnBk').classList.toggle('off', pMode === 'list');
-  // User info
   const u = S.fb.user;
   $('pnU').innerHTML = u
     ? `<span>${esc(u.displayName || u.email || 'signed in')}</span><button id="soBtn">sign out</button>`
     : `<span>local mode</span>${S.fb.enabled ? '<button id="siBtn">sign in</button>' : ''}`;
   if (u) $('soBtn')?.addEventListener('click', signOut);
   else $('siBtn')?.addEventListener('click', signIn);
-
   if (pMode === 'list') renderPL(); else renderPF();
 }
 function renderPL() {
@@ -355,7 +436,8 @@ function renderPL() {
   const dc = Object.values(S.ix).filter(v => v.score < 0).length;
   const st = document.createElement('div');
   st.style.cssText = 'padding:12px 16px;font-size:10px;color:var(--muted);letter-spacing:.08em;border-bottom:1px solid var(--line)';
-  st.textContent = `${lc} liked · ${dc} hidden · ${S.pool.size} loaded`;
+  const srcSummary = sourceState.map(s => `${s.label} (${s.done ? '✓' : '…'})`).join(' · ');
+  st.innerHTML = `${lc} liked · ${dc} hidden · ${S.pool.size} loaded<br><span style="opacity:.6">${srcSummary}</span>`;
   pl.appendChild(st);
   if (lc > 0) { const d = document.createElement('div'); d.className = 'pf'; d.innerHTML = `<span>♥ all liked</span><span class="fc">${lc}</span>`; d.onclick = () => { pMode = 'folder'; pFolder = '__liked__'; renderPN(); }; pl.appendChild(d); }
   const names = Object.keys(S.fo).sort();
@@ -417,26 +499,6 @@ function bind() {
   $('vw').addEventListener('touchend', e => { if (!S.vOpen) return; const dx = e.changedTouches[0].clientX - tx; if (Math.abs(dx) > 60) navV(dx < 0 ? 1 : -1); }, { passive: true });
 }
 function applyTheme() { document.body.classList.toggle('dark', S.cfg.theme === 'dark'); }
-
-// ── DEMO FALLBACK ──
-const DEMO = [[1,900,600,'warm golden landscape','flickr.com'],[10,800,1100,'forest moody green','tumblr.com'],[11,1000,700,'concrete brutalist arch','archdaily.com'],[13,700,1000,'macro nature detail','flickr.com'],[14,900,900,'dramatic portrait shadow','500px.com'],[15,1100,700,'urban industrial texture','tumblr.com'],[16,800,1200,'minimal white object','minimalissimo.com'],[17,1000,650,'aerial ocean coastal','unsplash.com'],[18,750,1000,'midcentury interior','dwell.com'],[19,1000,750,'poster typography print','itsnicethat.com'],[20,900,1300,'night street photo','flickr.com'],[21,1100,800,'botanical organic green','tumblr.com'],[22,800,800,'abstract geometric','dribbble.com'],[24,950,700,'arid desert warm','unsplash.com'],[25,700,1050,'animal portrait','flickr.com'],[26,1000,680,'dramatic sky clouds','500px.com'],[27,800,1100,'film grain vintage','lomography.com'],[28,1100,750,'glass modern arch','archdaily.com'],[29,900,900,'minimal food styling','kinfolk.com'],[30,750,1100,'editorial fashion','vsco.co']];
-let demoP = 0;
-function loadDemo() {
-  demoP++;
-  const profile = buildProfile(), batch = [];
-  for (let i = 0; i < 30; i++) {
-    const b = DEMO[(demoP * 7 + i) % DEMO.length];
-    const w = b[1] + (demoP * 11 + i * 3) % 60, h = b[2] + (demoP * 7 + i * 5) % 60;
-    const item = { id: `d${demoP}-${i}`, thumb: `https://picsum.photos/id/${b[0]}/${w}/${h}`, full: `https://picsum.photos/id/${b[0]}/${w + 400}/${h + 300}`, title: b[3], desc: b[3], domain: b[4], w, h };
-    if (S.pool.has(item.id)) continue;
-    S.pool.set(item.id, item);
-    item._score = scoreItem(item, profile);
-    batch.push(item);
-  }
-  batch.sort((a, b) => b._score - a._score);
-  appendCards(batch);
-  if (demoP > 8) S.hasMore = false;
-}
 
 // ── FIREBASE (optional) ──
 async function initFB(cfg) {

@@ -1,3 +1,7 @@
+window.FFFFOUND_CONFIG = {
+  tumblrKey: 'mznRpmCALtrXD2IPrVeqqiO07mnLE03EI7iZCDsvhRDTJrUoK7',
+};
+
 window.FFFFOUND_FIREBASE = {
   enabled: true,
   config: {
@@ -7,6 +11,5 @@ window.FFFFOUND_FIREBASE = {
     storageBucket: 'ffffound-7e80f.firebasestorage.app',
     messagingSenderId: '95928715950',
     appId: '1:95928715950:web:4a05bab27eb0b39327fb3f'
-  },
-  providers: { google: true }
+  }
 };
