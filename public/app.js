@@ -417,10 +417,21 @@ function quickVote(item, val, card) {
 
 // ── SCROLL ───────────────────────────────────────────────────
 function observeScroll() {
-  new IntersectionObserver(async ([e]) => {
-    if (!e.isIntersecting || S.loading) return;
-    if (S.hasMore) await fetchNext();
-  }, { rootMargin: '200px' }).observe(sentinel);
+  let scrollTimeout;
+  const checkAndFetch = async () => {
+    if (S.loading || !S.hasMore) return;
+    const sentinel = document.getElementById('sentinel');
+    if (!sentinel) return;
+    const rect = sentinel.getBoundingClientRect();
+    // Only trigger when sentinel is visible and within 100px of viewport bottom
+    if (rect.top <= window.innerHeight && rect.top >= window.innerHeight - 100) {
+      await fetchNext();
+    }
+  };
+  window.addEventListener('scroll', () => {
+    clearTimeout(scrollTimeout);
+    scrollTimeout = setTimeout(checkAndFetch, 500);
+  }, { passive: true });
 }
 
 // ── VIEWER ───────────────────────────────────────────────────
