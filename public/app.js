@@ -44,6 +44,17 @@ const SOURCES = [
   { type: 'tumblr', blog: 'bookspaperscissors',      label: 'books paper scissors' },
   // ~6k — jjjjound aesthetic (if accessible)
   { type: 'tumblr', blog: 'jjjjound',                label: 'jjjjound' },
+
+  // NEW: Mid-century modern
+  { type: 'tumblr', blog: 'midcenturymoderndesign', label: 'MCM design' },
+  { type: 'tumblr', blog: 'mid-20c-blog',           label: 'mid-20c blog' },
+  { type: 'tumblr', blog: 'midcenturymodernfreak',  label: 'MCM freak' },
+  { type: 'tumblr', blog: 'midcenturymoderns',     label: 'MCM moderns' },
+  { type: 'tumblr', blog: 'vintageeveryday',       label: 'vintage everyday' },
+  // NEW: Design/typography
+  { type: 'tumblr', blog: 'thegraphicsideof',      label: 'graphics side' },
+  { type: 'tumblr', blog: 'vignellicenter',       label: 'vignelli center' },
+  { type: 'tumblr', blog: 'vintagebooksdesign',   label: 'vintage books' },
 ];
 // ─────────────────────────────────────────────────────────────
 
