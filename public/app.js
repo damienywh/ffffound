@@ -160,19 +160,27 @@ async function fetchSource(src) {
 
 // ── ARE.NA ADAPTER ───────────────────────────────────────────
 async function fetchArena(src) {
+  // First call: get channel length to calculate real page count
+  if (src.totalPages === null) {
+    try {
+      const infoRes = await fetch(`https://api.are.na/v2/channels/${src.slug}`, { headers: { Accept: 'application/json' } });
+      if (infoRes.ok) {
+        const infoJson = await infoRes.json();
+        const realLength = infoJson.length || 0;
+        src.totalPages = realLength > 0 ? Math.ceil(realLength / 100) : 99;
+        console.log(`[Are.na:${src.slug}] ${realLength} items, ${src.totalPages} pages`);
+      } else {
+        src.totalPages = 99; // fallback
+      }
+    } catch (e) {
+      src.totalPages = 99; // fallback
+    }
+  }
+
   const url = `https://api.are.na/v2/channels/${src.slug}/contents?page=${src.page}&per=100`;
   const res = await fetch(url, { headers: { Accept: 'application/json' } });
   if (!res.ok) throw new Error(`Are.na ${res.status}`);
   const json = await res.json();
-
-  // FIX: Are.na caps total_pages at 999 — use length/100 for the real count
-  if (src.totalPages === null) {
-    const realLength = json.length || json.meta?.length || 0;
-    src.totalPages = realLength > 0
-      ? Math.ceil(realLength / 100)
-      : (json.total_pages || json.meta?.total_pages || 999);
-    console.log(`[Are.na:${src.slug}] length=${realLength}, real pages=${src.totalPages}`);
-  }
 
   const raw = (json.contents || json.data || []).filter(x => x.image);
   if (raw.length === 0 || src.page > src.totalPages) {
